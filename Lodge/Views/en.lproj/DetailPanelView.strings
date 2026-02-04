@@ -1,0 +1,22 @@
+"Information" = "Information";
+"Source" = "Source";
+"ContentType" = "Content type";
+"Characters" = "Characters";
+"Words" = "Words";
+"Copied" = "Copied";
+"at" = "at";
+"TimesCopied" = "Times copied";
+"NoItemSelected" = "Select an item to view details";
+
+/* Content type labels */
+"ContentType.Text.Plain" = "Text (Plain)";
+"ContentType.Text.Rich" = "Text (Rich)";
+"ContentType.Text.HTML" = "Text (HTML)";
+"ContentType.Text.Formatted" = "Text (Formatted)";
+"ContentType.Image" = "Image";
+"ContentType.Image.PNG" = "Image (PNG)";
+"ContentType.Image.TIFF" = "Image (TIFF)";
+"ContentType.Image.JPEG" = "Image (JPEG)";
+"ContentType.Image.HEIC" = "Image (HEIC)";
+"ContentType.FileURL" = "File URL";
+"ContentType.Mixed" = "Mixed Content";

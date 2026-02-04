@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v2.7.0)"
+        required: true
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-26
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      DOWNLOAD_URL_PREFIX: https://github.com/${{ github.repository }}/releases/download/${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Sparkle tools
+        run: brew install sparkle
+
+      - name: Import signing certificates
+        uses: apple-actions/import-codesign-certs@v2
+        with:
+          p12-file-base64: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          p12-password: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+
+      - name: Prepare notarization key
+        run: |
+          echo "${{ secrets.NOTARY_KEY_P8 }}" | base64 -d > "$RUNNER_TEMP/AuthKey.p8"
+
+      - name: Update export options team ID
+        run: /usr/libexec/PlistBuddy -c "Set :teamID ${{ secrets.APPLE_TEAM_ID }}" scripts/export-options.plist
+
+      - name: Build, sign, and notarize
+        run: |
+          chmod +x scripts/release.sh scripts/generate-appcast.sh
+          NOTARY_KEY="$RUNNER_TEMP/AuthKey.p8" \
+          NOTARY_KEY_ID="${{ secrets.NOTARY_KEY_ID }}" \
+          NOTARY_ISSUER_ID="${{ secrets.NOTARY_ISSUER_ID }}" \
+          scripts/release.sh
+
+      - name: Prepare Sparkle private key
+        run: |
+          echo "${{ secrets.SPARKLE_PRIVATE_KEY }}" | base64 -d > "$RUNNER_TEMP/sparkle_ed_private"
+          chmod 600 "$RUNNER_TEMP/sparkle_ed_private"
+
+      - name: Generate appcast
+        run: |
+          SPARKLE_BIN="$(dirname "$(find "$(brew --prefix)/Caskroom/sparkle" -name generate_appcast -type f | head -1)")" \
+            SPARKLE_PRIVATE_KEY="$RUNNER_TEMP/sparkle_ed_private" \
+            DOWNLOAD_URL_PREFIX="$DOWNLOAD_URL_PREFIX" \
+            scripts/generate-appcast.sh
+
+      - name: Create or update GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --generate-notes
+          fi
+          gh release upload "$RELEASE_TAG" \
+            build/Lodge.dmg \
+            build/updates/Lodge.app.zip \
+            appcast.xml \
+            --clobber

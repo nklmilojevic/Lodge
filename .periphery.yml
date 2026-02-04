@@ -1,0 +1,6 @@
+project: Lodge.xcodeproj
+retain_objc_accessible: true
+schemes:
+- Lodge
+targets:
+- Lodge

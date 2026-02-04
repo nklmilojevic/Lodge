@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(cat:*)",
+      "Bash(xcodebuild:*)",
+      "Bash(open:*)",
+      "Bash(defaults delete:*)",
+      "Bash(grep:*)",
+      "Bash(hdiutil attach:*)",
+      "Bash(plutil:*)",
+      "Bash(codesign:*)",
+      "Bash(spctl --assess --type execute --verbose:*)",
+      "Bash(hdiutil detach:*)",
+      "Bash(otool:*)",
+      "Bash(git mv:*)",
+      "Bash(xargs sed:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
