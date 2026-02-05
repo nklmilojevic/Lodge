@@ -83,6 +83,7 @@ jobs:
 
           gh repo clone nklmilojevic/homebrew-lodge "$RUNNER_TEMP/homebrew-lodge"
           cd "$RUNNER_TEMP/homebrew-lodge"
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/nklmilojevic/homebrew-lodge.git"
 
           sed -i '' "s/version \".*\"/version \"$VERSION\"/" Casks/lodge.rb
           sed -i '' "s/sha256 \".*\"/sha256 \"$SHA256\"/" Casks/lodge.rb
