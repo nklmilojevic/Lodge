@@ -61,6 +61,20 @@ jobs:
             DOWNLOAD_URL_PREFIX="$DOWNLOAD_URL_PREFIX" \
             scripts/generate-appcast.sh
 
+      - name: Commit appcast to main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp appcast.xml "$RUNNER_TEMP/appcast.xml"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout main
+          cp "$RUNNER_TEMP/appcast.xml" appcast.xml
+          git add appcast.xml
+          git commit -m "Update appcast for $RELEASE_TAG"
+          git push origin main
+
       - name: Create or update GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
