@@ -28,13 +28,11 @@
     </item>
     <item>
       <title>1.0.0</title>
-      <description>
-        <![CDATA[
+      <description><![CDATA[
           <ul>
             <li>Initial release of Lodge.</li>
           </ul>
-        ]]>
-      </description>
+        ]]></description>
       <pubDate>2026-02-05</pubDate>
       <releaseNotesLink>https://github.com/nklmilojevic/Lodge/releases/tag/v1.0.0</releaseNotesLink>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
