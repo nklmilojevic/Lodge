@@ -11,7 +11,7 @@
             <sparkle:version>4</sparkle:version>
             <sparkle:shortVersionString>1.0.3</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/nklmilojevic/Lodge/releases/download/Lodge.app.zip" length="4505755" type="application/octet-stream" sparkle:edSignature="DOtq9kqosb3uhPO6q6LlkHjsiXsqxIQguG1iEATRPnEFDUgswwZWg8fkQi3BFbRRTQrSYtWsdQy8H93IkcYuAQ=="/>
+            <enclosure url="https://github.com/nklmilojevic/Lodge/releases/download/v1.0.3/Lodge.app.zip" length="4505755" type="application/octet-stream" sparkle:edSignature="DOtq9kqosb3uhPO6q6LlkHjsiXsqxIQguG1iEATRPnEFDUgswwZWg8fkQi3BFbRRTQrSYtWsdQy8H93IkcYuAQ=="/>
         </item>
         <item>
             <title>1.0.2</title>

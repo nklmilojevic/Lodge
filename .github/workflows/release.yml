@@ -18,7 +18,7 @@ jobs:
     runs-on: macos-26
     env:
       RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
-      DOWNLOAD_URL_PREFIX: https://github.com/${{ github.repository }}/releases/download/${{ github.event.inputs.tag || github.ref_name }}
+      DOWNLOAD_URL_PREFIX: https://github.com/${{ github.repository }}/releases/download/${{ github.event.inputs.tag || github.ref_name }}/
     steps:
       - name: Checkout
         uses: actions/checkout@v4
