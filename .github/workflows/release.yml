@@ -38,6 +38,16 @@ jobs:
         run: |
           echo "${{ secrets.NOTARY_KEY_P8 }}" | base64 -d > "$RUNNER_TEMP/AuthKey.p8"
 
+      - name: Bump version from tag
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          # Increment build number: read current, add 1
+          CURRENT_BUILD=$(grep -m1 'CURRENT_PROJECT_VERSION' Lodge.xcodeproj/project.pbxproj | sed 's/[^0-9]//g')
+          NEW_BUILD=$((CURRENT_BUILD + 1))
+          sed -i '' "s/MARKETING_VERSION = .*;/MARKETING_VERSION = $VERSION;/g" Lodge.xcodeproj/project.pbxproj
+          sed -i '' "s/CURRENT_PROJECT_VERSION = .*;/CURRENT_PROJECT_VERSION = $NEW_BUILD;/g" Lodge.xcodeproj/project.pbxproj
+          echo "Version: $VERSION, Build: $NEW_BUILD"
+
       - name: Update export options team ID
         run: /usr/libexec/PlistBuddy -c "Set :teamID ${{ secrets.APPLE_TEAM_ID }}" scripts/export-options.plist
 
@@ -61,18 +71,20 @@ jobs:
             DOWNLOAD_URL_PREFIX="$DOWNLOAD_URL_PREFIX" \
             scripts/generate-appcast.sh
 
-      - name: Commit appcast to main
+      - name: Commit appcast and version bump to main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cp appcast.xml "$RUNNER_TEMP/appcast.xml"
+          cp Lodge.xcodeproj/project.pbxproj "$RUNNER_TEMP/project.pbxproj"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin main
           git checkout main
           cp "$RUNNER_TEMP/appcast.xml" appcast.xml
-          git add appcast.xml
-          git commit -m "Update appcast for $RELEASE_TAG"
+          cp "$RUNNER_TEMP/project.pbxproj" Lodge.xcodeproj/project.pbxproj
+          git add appcast.xml Lodge.xcodeproj/project.pbxproj
+          git commit -m "Update appcast and version for $RELEASE_TAG"
           git push origin main
 
       - name: Create or update GitHub Release
