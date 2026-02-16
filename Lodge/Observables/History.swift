@@ -56,21 +56,27 @@ class History { // swiftlint:disable:this type_body_length
   private var _cachedVisibleUnpinnedItems: [HistoryItemDecorator]?
 
   var pinnedItems: [HistoryItemDecorator] {
+    // Always access `items` so @Observable tracks it even on cache hits.
+    // Without this, views returning cached values lose their dependency on
+    // `items` and won't re-render when search results change.
+    let currentItems = items
     if let cached = _cachedPinnedItems { return cached }
-    let filtered = items.filter(\.isPinned)
+    let filtered = currentItems.filter(\.isPinned)
     _cachedPinnedItems = filtered
     return filtered
   }
 
   var unpinnedItems: [HistoryItemDecorator] {
+    let currentItems = items
     if let cached = _cachedUnpinnedItems { return cached }
-    let filtered = items.filter(\.isUnpinned)
+    let filtered = currentItems.filter(\.isUnpinned)
     _cachedUnpinnedItems = filtered
     return filtered
   }
 
   // Pre-filtered visible items to avoid repeated filtering in views
   var visiblePinnedItems: [HistoryItemDecorator] {
+    _ = items
     if let cached = _cachedVisiblePinnedItems { return cached }
     let filtered = pinnedItems.filter(\.isVisible)
     _cachedVisiblePinnedItems = filtered
@@ -78,6 +84,7 @@ class History { // swiftlint:disable:this type_body_length
   }
 
   var visibleUnpinnedItems: [HistoryItemDecorator] {
+    _ = items
     if let cached = _cachedVisibleUnpinnedItems { return cached }
     let filtered = unpinnedItems.filter(\.isVisible)
     _cachedVisibleUnpinnedItems = filtered
