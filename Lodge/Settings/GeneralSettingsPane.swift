@@ -102,6 +102,12 @@ struct GeneralSettingsPane: View {
           })
         }
       }
+
+      Settings.Section(title: "") {
+        Text("Lodge \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""))")
+          .foregroundStyle(.secondary)
+          .font(.caption)
+      }
     }
   }
 
