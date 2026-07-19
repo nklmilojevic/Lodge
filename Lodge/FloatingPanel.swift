@@ -100,7 +100,9 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
     NSAnimationContext.runAnimationGroup { (context) in
       context.duration = 0.2
       animator().setFrame(NSRect(origin: newOrigin, size: newSize), display: true)
-    } completionHandler: { [weak self] in
+    }
+    Task { @MainActor [weak self] in
+      try? await Task.sleep(for: .milliseconds(200))
       self?.isProgrammaticResize = false
     }
   }

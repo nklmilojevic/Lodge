@@ -1,6 +1,7 @@
 import Sparkle
 
 @Observable
+@MainActor
 class SoftwareUpdater {
   var automaticallyChecksForUpdates = false {
     didSet {
@@ -22,12 +23,15 @@ class SoftwareUpdater {
     automaticallyChecksForUpdatesObservation = updater.observe(
       \.automaticallyChecksForUpdates,
       options: [.initial, .new, .old]
-    ) { [unowned self] updater, change in
+    ) { [weak self] updater, change in
       guard change.newValue != change.oldValue else {
         return
       }
 
-      self.automaticallyChecksForUpdates = updater.automaticallyChecksForUpdates
+      let automaticallyChecksForUpdates = updater.automaticallyChecksForUpdates
+      Task { @MainActor [weak self] in
+        self?.automaticallyChecksForUpdates = automaticallyChecksForUpdates
+      }
     }
   }
 

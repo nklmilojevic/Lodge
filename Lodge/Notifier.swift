@@ -1,5 +1,5 @@
 import AppKit
-import UserNotifications
+@preconcurrency import UserNotifications
 
 class Notifier {
   private static var center: UNUserNotificationCenter { UNUserNotificationCenter.current() }

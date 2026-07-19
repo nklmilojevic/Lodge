@@ -2,6 +2,7 @@ import Defaults
 import SwiftUI
 
 @Observable
+@MainActor
 class Footer {
   var items: [FooterItem] = []
 
@@ -63,14 +64,18 @@ class Footer {
         title: "about",
         help: "about_tooltip"
       ) {
-        AppState.shared.openAbout()
+        Task { @MainActor in
+          AppState.shared.openAbout()
+        }
       },
       FooterItem(
         title: "quit",
         shortcuts: [KeyShortcut(key: .q)],
         help: "quit_tooltip"
       ) {
-        AppState.shared.quit()
+        Task { @MainActor in
+          AppState.shared.quit()
+        }
       }
     ]
   }

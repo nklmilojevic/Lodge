@@ -18,27 +18,10 @@
       "containerPath" : "container:Lodge.xcodeproj",
       "identifier" : "DAEE38421E3DBEB100DD2966",
       "name" : "Lodge"
-    },
-    "testRepetitionMode" : "retryOnFailure"
+    }
   },
   "testTargets" : [
     {
-      "skippedTests" : [
-        "HistoryTests",
-        "HistoryTests\/testAdding()",
-        "HistoryTests\/testAddingItemFromLodge()",
-        "HistoryTests\/testAddingItemThatIsSupersededByExisting()",
-        "HistoryTests\/testAddingItemWithDifferentModifiedType()",
-        "HistoryTests\/testAddingSame()",
-        "HistoryTests\/testClearingAll()",
-        "HistoryTests\/testClearingUnpinned()",
-        "HistoryTests\/testDefaultIsEmpty()",
-        "HistoryTests\/testMaxSize()",
-        "HistoryTests\/testMaxSizeIgnoresPinned()",
-        "HistoryTests\/testMaxSizeIsChanged()",
-        "HistoryTests\/testModifiedAfterCopying()",
-        "HistoryTests\/testRemoving()"
-      ],
       "target" : {
         "containerPath" : "container:Lodge.xcodeproj",
         "identifier" : "DA360DAF1E3DF137005C6F6B",

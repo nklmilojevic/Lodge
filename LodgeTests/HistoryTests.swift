@@ -1,5 +1,6 @@
 import XCTest
 import Defaults
+import SwiftData
 @testable import Lodge
 
 @MainActor
@@ -231,6 +232,46 @@ class HistoryTests: XCTestCase {
     let bar = history.add(historyItem("bar"))
     history.delete(foo)
     XCTAssertEqual(history.items, [bar])
+  }
+
+  func testPositionValidationRejectsEveryOutOfBoundsValue() throws {
+    XCTAssertEqual(try HistoryItemPosition.index(number: 1, count: 2), 0)
+    XCTAssertEqual(try HistoryItemPosition.index(number: 2, count: 2), 1)
+    XCTAssertThrowsError(try HistoryItemPosition.index(number: 0, count: 2))
+    XCTAssertThrowsError(try HistoryItemPosition.index(number: -1, count: 2))
+    XCTAssertThrowsError(try HistoryItemPosition.index(number: 3, count: 2))
+    XCTAssertThrowsError(try HistoryItemPosition.index(number: 1, count: 0))
+  }
+
+  func testLoadReturnsAllItemsBeyondTheOldFirstPage() async throws {
+    let container = try ModelContainer(
+      for: HistoryItem.self,
+      configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+    )
+    let context = container.mainContext
+    let repository = HistoryRepository(context: context)
+    let loadedHistory = History(repository: repository)
+    Defaults[.size] = 150
+
+    for index in 0..<150 {
+      let item = HistoryItem()
+      item.contents = [
+        HistoryItemContent(
+          type: NSPasteboard.PasteboardType.string.rawValue,
+          value: Data("item-\(index)".utf8)
+        )
+      ]
+      item.title = "item-\(index)"
+      item.firstCopiedAt = Date(timeIntervalSince1970: Double(index))
+      item.lastCopiedAt = item.firstCopiedAt
+      context.insert(item)
+    }
+    try context.save()
+
+    try await loadedHistory.load()
+
+    XCTAssertEqual(loadedHistory.items.count, 150)
+    XCTAssertEqual(Set(loadedHistory.items.map(\.title)).count, 150)
   }
 
   private func historyItem(_ value: String) -> HistoryItem {

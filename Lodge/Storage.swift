@@ -7,11 +7,26 @@ class Storage {
 
   var container: ModelContainer
   var context: ModelContext { container.mainContext }
+  private(set) var loadError: String?
   var size: String {
-    guard let size = try? Self.storeURL.resourceValues(forKeys: [.fileSizeKey]).allValues.first?.value as? Int64, size > 1 else {
+    let storeDirectory = Self.storeURL.deletingLastPathComponent()
+    guard let enumerator = FileManager.default.enumerator(
+      at: storeDirectory,
+      includingPropertiesForKeys: [.fileAllocatedSizeKey, .fileSizeKey],
+      options: [.skipsHiddenFiles]
+    ) else {
       return ""
     }
 
+    let size = enumerator.compactMap { entry -> Int64? in
+      guard let url = entry as? URL,
+            let values = try? url.resourceValues(forKeys: [.fileAllocatedSizeKey, .fileSizeKey]) else {
+        return nil
+      }
+      return Int64(values.fileAllocatedSize ?? values.fileSize ?? 0)
+    }.reduce(0, +)
+
+    guard size > 0 else { return "" }
     return ByteCountFormatter().string(fromByteCount: size)
   }
 
@@ -39,8 +54,18 @@ class Storage {
 
     do {
       container = try ModelContainer(for: HistoryItem.self, configurations: config)
-    } catch let error {
-      fatalError("Cannot load database: \(error.localizedDescription).")
+    } catch {
+      loadError = error.localizedDescription
+      NSLog("Cannot load Lodge database; using temporary in-memory storage: \(error)")
+
+      do {
+        container = try ModelContainer(
+          for: HistoryItem.self,
+          configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+      } catch {
+        preconditionFailure("Cannot create fallback database: \(error.localizedDescription).")
+      }
     }
   }
 
@@ -59,7 +84,7 @@ class Storage {
       try fileManager.createDirectory(at: targetDirectory, withIntermediateDirectories: true)
       try Self.copyStoreFiles(from: legacyURL, to: Self.storeURL)
     } catch {
-      return
+      NSLog("Cannot migrate legacy Lodge database from \(legacyURL.path): \(error)")
     }
   }
 
@@ -93,5 +118,58 @@ class Storage {
       }
       try fileManager.copyItem(at: legacyFile, to: targetFile)
     }
+  }
+}
+
+/// Owns SwiftData access so History can be tested independently from persistence details.
+@MainActor
+final class HistoryRepository {
+  static let shared = HistoryRepository()
+
+  private let context: ModelContext
+
+  init(context: ModelContext? = nil) {
+    self.context = context ?? Storage.shared.context
+  }
+
+  func fetchAll() throws -> [HistoryItem] {
+    try context.fetch(FetchDescriptor<HistoryItem>())
+  }
+
+  func insert(_ item: HistoryItem) throws {
+    context.insert(item)
+    context.processPendingChanges()
+    try context.save()
+  }
+
+  func save() throws {
+    try context.save()
+  }
+
+  func delete(_ item: HistoryItem) throws {
+    context.delete(item)
+    context.processPendingChanges()
+    try context.save()
+  }
+
+  func delete(_ items: [HistoryItem]) throws {
+    try context.transaction {
+      items.forEach(context.delete)
+    }
+    try context.save()
+  }
+
+  func deleteUnpinned() throws {
+    try context.transaction {
+      try context.delete(model: HistoryItem.self, where: #Predicate { $0.pin == nil })
+    }
+    context.processPendingChanges()
+    try context.save()
+  }
+
+  func deleteAll() throws {
+    try context.delete(model: HistoryItem.self)
+    context.processPendingChanges()
+    try context.save()
   }
 }

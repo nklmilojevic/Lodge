@@ -1,4 +1,4 @@
-import Settings
+@preconcurrency import Settings
 
 extension Settings.PaneIdentifier {
   static let advanced = Self("advanced")

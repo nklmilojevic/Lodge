@@ -107,6 +107,11 @@ struct StorageSettingsPane: View {
               storageSize = Storage.shared.size
             }
         }
+        if let loadError = Storage.shared.loadError {
+          Text("Lodge could not open the persistent history and is using temporary storage. \(loadError)")
+            .foregroundStyle(.red)
+            .fixedSize(horizontal: false, vertical: true)
+        }
       }
 
       Settings.Section(label: { Text("SortBy", tableName: "StorageSettings") }) {

@@ -30,7 +30,11 @@ struct ContentView: View {
           appState.isKeyboardNavigating = false
         }
         .task {
-          try? await appState.history.load()
+          do {
+            try await appState.history.load()
+          } catch {
+            appState.history.logger.error("Cannot load history: \(error)")
+          }
         }
     }
     .environment(appState)

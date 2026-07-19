@@ -41,6 +41,55 @@ class HistoryItemTests: XCTestCase {
     XCTAssertEqual(item.title, "⇥foo⇥bar⇥")
   }
 
+  func testContentFingerprintIsStableAndIgnoresTransientMetadata() {
+    let first = HistoryItem()
+    first.contents = [
+      HistoryItemContent(
+        type: NSPasteboard.PasteboardType.string.rawValue,
+        value: Data("same text".utf8)
+      ),
+      HistoryItemContent(
+        type: NSPasteboard.PasteboardType.html.rawValue,
+        value: Data("<p>same text</p>".utf8)
+      )
+    ]
+    let second = HistoryItem()
+    second.contents = [
+      HistoryItemContent(
+        type: NSPasteboard.PasteboardType.modified.rawValue,
+        value: Data("42".utf8)
+      ),
+      HistoryItemContent(
+        type: NSPasteboard.PasteboardType.html.rawValue,
+        value: Data("<p>same text</p>".utf8)
+      ),
+      HistoryItemContent(
+        type: NSPasteboard.PasteboardType.string.rawValue,
+        value: Data("same text".utf8)
+      )
+    ]
+    first.computeContentFingerprint()
+    second.computeContentFingerprint()
+
+    XCTAssertFalse(first.contentFingerprint.isEmpty)
+    XCTAssertEqual(first.contentFingerprint, second.contentFingerprint)
+  }
+
+  func testContentFingerprintChangesWithPayload() {
+    let first = HistoryItem()
+    first.contents = [
+      HistoryItemContent(type: NSPasteboard.PasteboardType.string.rawValue, value: Data("one".utf8))
+    ]
+    let second = HistoryItem()
+    second.contents = [
+      HistoryItemContent(type: NSPasteboard.PasteboardType.string.rawValue, value: Data("two".utf8))
+    ]
+    first.computeContentFingerprint()
+    second.computeContentFingerprint()
+
+    XCTAssertNotEqual(first.contentFingerprint, second.contentFingerprint)
+  }
+
   func testTitleWithRTF() {
     let rtf = NSAttributedString(string: "foo").rtf(
       from: NSRange(0...2),

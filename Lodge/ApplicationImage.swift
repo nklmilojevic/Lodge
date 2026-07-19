@@ -1,6 +1,7 @@
 import Defaults
 import SwiftUI
 
+@MainActor
 class ApplicationImage {
   fileprivate static let fallbackImage = NSImage(
     systemSymbolName: "questionmark.app.dashed",

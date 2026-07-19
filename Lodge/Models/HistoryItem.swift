@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import Defaults
 import ImageIO
 import Sauce
@@ -10,9 +11,9 @@ class HistoryItem {
   private static let ocrMaxLength = 10_000
 
   // Pre-compiled regex patterns for generateTitle() to avoid repeated compilation
-  private static let leadingWhitespaceRegex = try? NSRegularExpression(pattern: "^\\s+")
   private static let leadingSpacesRegex = try? NSRegularExpression(pattern: "^ +")
   private static let trailingSpacesRegex = try? NSRegularExpression(pattern: " +$")
+  @MainActor
   static var supportedPins: Set<String> {
     // "a" reserved for select all
     // "q" reserved for quit
@@ -71,6 +72,7 @@ class HistoryItem {
   var pin: String?
   var title = ""
   var ocrText: String?
+  var contentFingerprint = ""
 
   // Pre-computed text statistics stored in database to avoid on-demand calculation
   var characterCount: Int = 0
@@ -82,6 +84,7 @@ class HistoryItem {
   @Transient private var cachedImage: NSImage?
   @Transient private var cachedUniversalClipboardImageData: Data?
   @Transient private var didLoadUniversalClipboardImageData = false
+  @Transient private var isOCRInProgress = false
 
   @Relationship(deleteRule: .cascade, inverse: \HistoryItemContent.item)
   var contents: [HistoryItemContent] = []
@@ -118,20 +121,39 @@ class HistoryItem {
     wordCount = textContent.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count
   }
 
+  /// Creates a stable digest once so common exact duplicates can be found in O(1).
+  func computeContentFingerprint() {
+    let digests = contents
+      .filter { !Self.transientTypes.contains($0.type) }
+      .map { content -> String in
+        var hasher = SHA256()
+        hasher.update(data: Data(content.type.utf8))
+        hasher.update(data: Data([0]))
+        if let value = content.value {
+          hasher.update(data: value)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+      }
+      .sorted()
+
+    guard !digests.isEmpty else {
+      contentFingerprint = ""
+      return
+    }
+
+    let digest = SHA256.hash(data: Data(digests.joined(separator: ":").utf8))
+    contentFingerprint = digest.map { String(format: "%02x", $0) }.joined()
+  }
+
+  @MainActor
   func generateTitle() -> String {
-    guard image == nil else {
+    guard !hasImageContent else {
       scheduleOCRIfNeeded()
       return title
     }
 
     // 1k characters is trade-off for performance
     var title = previewableText.shortened(to: 1_000)
-
-    // Strip leading whitespace for cleaner titles using pre-compiled regex
-    if let regex = Self.leadingWhitespaceRegex {
-      let range = NSRange(title.startIndex..., in: title)
-      title = regex.stringByReplacingMatches(in: title, range: range, withTemplate: "")
-    }
 
     if Defaults[.showSpecialSymbols] {
       // Replace leading spaces with visible dots using pre-compiled regex
@@ -218,6 +240,7 @@ class HistoryItem {
   }
 
   /// Preload image data from file URLs in background to avoid blocking main thread
+  @MainActor
   func preloadUniversalClipboardImageData() {
     guard !didLoadUniversalClipboardImageData,
           (universalClipboardImage || fileURLImage),
@@ -225,12 +248,11 @@ class HistoryItem {
       return
     }
 
-    Task.detached(priority: .utility) { [weak self] in
-      let data = try? Data(contentsOf: url)
-      await MainActor.run {
-        self?.cachedUniversalClipboardImageData = data
-        self?.didLoadUniversalClipboardImageData = true
-      }
+    Task(priority: .utility) { [weak self] in
+      let data = await Self.loadData(from: url)
+      guard let self else { return }
+      self.cachedUniversalClipboardImageData = data
+      self.didLoadUniversalClipboardImageData = true
     }
   }
 
@@ -316,55 +338,67 @@ class HistoryItem {
       .compactMap { $0.value }
   }
 
+  @MainActor
   func scheduleOCRIfNeeded() {
-    if !Thread.isMainThread {
-      DispatchQueue.main.async { [weak self] in
-        self?.scheduleOCRIfNeeded()
+    guard Defaults[.ocrInImages], ocrText == nil, !isOCRInProgress else {
+      return
+    }
+
+    let embeddedData = contentData([.tiff, .png, .jpeg, .heic])
+    let fileURL = embeddedData == nil && (universalClipboardImage || fileURLImage) ? fileURLs.first : nil
+    guard embeddedData != nil || fileURL != nil else { return }
+
+    isOCRInProgress = true
+    Task(priority: .utility) { [weak self] in
+      let data: Data?
+      if let embeddedData {
+        data = embeddedData
+      } else if let fileURL {
+        data = await Self.loadData(from: fileURL)
+      } else {
+        data = nil
       }
-      return
-    }
 
-    guard Defaults[.ocrInImages], ocrText == nil, let data = imageData else {
-      return
-    }
-
-    // Mark as in-progress so we don't launch duplicate OCR tasks.
-    ocrText = ""
-    let dataCopy = data
-
-    Task.detached(priority: .utility) { [weak self] in
-      guard let cgImage = Self.makeCGImage(from: dataCopy) else { return }
-
-      let request = VNRecognizeTextRequest()
-      request.recognitionLevel = .fast
-
-      let requestHandler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-      do {
-        try requestHandler.perform([request])
-      } catch {
+      guard let self else { return }
+      guard let data, let recognizedText = await Self.recognizeText(in: data) else {
+        self.isOCRInProgress = false
         return
       }
 
-      let observations = request.results as? [VNRecognizedTextObservation] ?? []
-      let recognizedText = observations
-        .compactMap { $0.topCandidates(1).first?.string }
-        .joined(separator: "\n")
-        .shortened(to: Self.ocrMaxLength)
-
-      await MainActor.run {
-        guard let self else { return }
-        self.ocrText = recognizedText
-        if !History.shared.searchQuery.isEmpty {
-          History.shared.refreshSearchResults()
-        }
+      self.isOCRInProgress = false
+      self.ocrText = recognizedText
+      if !History.shared.searchQuery.isEmpty {
+        History.shared.refreshSearchResults(invalidateCache: true)
       }
     }
   }
 
-  private static func makeCGImage(from data: Data) -> CGImage? {
-    guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
-      return nil
-    }
-    return CGImageSourceCreateImageAtIndex(source, 0, nil)
+  private nonisolated static func loadData(from url: URL) async -> Data? {
+    await Task.detached(priority: .utility) {
+      try? Data(contentsOf: url)
+    }.value
+  }
+
+  private nonisolated static func recognizeText(in data: Data) async -> String? {
+    await Task.detached(priority: .utility) { () -> String? in
+      guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+            let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+        return nil
+      }
+
+      let request = VNRecognizeTextRequest()
+      request.recognitionLevel = .fast
+
+      do {
+        try VNImageRequestHandler(cgImage: cgImage, options: [:]).perform([request])
+      } catch {
+        return nil
+      }
+
+      return (request.results ?? [])
+        .compactMap { $0.topCandidates(1).first?.string }
+        .joined(separator: "\n")
+        .shortened(to: Self.ocrMaxLength)
+    }.value
   }
 }

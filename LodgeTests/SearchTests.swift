@@ -233,11 +233,13 @@ class SearchTests: XCTestCase {
     XCTAssertEqual(search("m"), [])
   }
 
+  @MainActor
   private func search(_ string: String) -> [Search.SearchResult] {
     return Search().search(string: string, within: items)
   }
 
   // swiftlint:disable:next identifier_name
+  @MainActor
   private func range(from: Int, to: Int, in item: HistoryItemDecorator) -> Range<String.Index> {
     let startIndex = item.title.startIndex
     let lowerBound = item.title.index(startIndex, offsetBy: from)
