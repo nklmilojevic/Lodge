@@ -5,8 +5,9 @@ import Observation
 import Sauce
 
 @Observable
+@MainActor
 class HistoryItemDecorator: Identifiable, Hashable {
-  static func == (lhs: HistoryItemDecorator, rhs: HistoryItemDecorator) -> Bool {
+  nonisolated static func == (lhs: HistoryItemDecorator, rhs: HistoryItemDecorator) -> Bool {
     return lhs.id == rhs.id
   }
 
@@ -20,7 +21,7 @@ class HistoryItemDecorator: Identifiable, Hashable {
     )
   }
 
-  let id = UUID()
+  nonisolated let id = UUID()
 
   var title: String = ""
   var attributedTitle: AttributedString?
@@ -65,11 +66,6 @@ class HistoryItemDecorator: Identifiable, Hashable {
   private var cachedWordCount: Int?
   @ObservationIgnored
   private var cachedContentTypeDescription: String?
-  @ObservationIgnored
-  private var pinObservationTask: Task<Void, Never>?
-  @ObservationIgnored
-  private var titleObservationTask: Task<Void, Never>?
-
   // Limit preview text for performance - large text causes UI lag
   // 5k characters is enough for previewing while keeping SwiftUI responsive
   private static let maxPreviewTextLength = 5_000
@@ -162,20 +158,22 @@ class HistoryItemDecorator: Identifiable, Hashable {
 
     let textContent = text
 
-    textStatsTask = Task.detached(priority: .userInitiated) { [weak self] in
-      let charCount = textContent.count
-      let wdCount = textContent.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count
+    textStatsTask = Task { @MainActor [weak self] in
+      let stats = await Task.detached(priority: .userInitiated) {
+        (
+          textContent.count,
+          textContent.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count
+        )
+      }.value
 
-      await MainActor.run {
-        guard let self else { return }
-        self.cachedCharacterCount = charCount
-        self.cachedWordCount = wdCount
+      guard let self else { return }
+      self.cachedCharacterCount = stats.0
+      self.cachedWordCount = stats.1
 
-        // Backfill the database so we don't compute again
-        if self.item.characterCount == 0 {
-          self.item.characterCount = charCount
-          self.item.wordCount = wdCount
-        }
+      // Backfill the database so we don't compute again
+      if self.item.characterCount == 0 {
+        self.item.characterCount = stats.0
+        self.item.wordCount = stats.1
       }
     }
   }
@@ -235,21 +233,33 @@ class HistoryItemDecorator: Identifiable, Hashable {
   var isPinned: Bool { item.pin != nil }
   var isUnpinned: Bool { item.pin == nil }
 
-  func hash(into hasher: inout Hasher) {
-    // We need to hash title and attributedTitle, so SwiftUI knows it needs to update the view if they chage
+  nonisolated func hash(into hasher: inout Hasher) {
+    // Hash values must remain stable while the item is stored in a Set or Dictionary.
     hasher.combine(id)
-    hasher.combine(title)
-    hasher.combine(attributedTitle)
   }
 
   private(set) var item: HistoryItem
 
+  @MainActor
   init(_ item: HistoryItem, shortcuts: [KeyShortcut] = []) {
     self.item = item
     self.shortcuts = shortcuts
     self.title = item.title
     self.applicationImage = ApplicationImageCache.shared.getImage(item: item)
 
+    synchronizeItemPin()
+    synchronizeItemTitle()
+  }
+
+  @MainActor
+  func replaceItem(_ item: HistoryItem) {
+    cleanupImages()
+    self.item = item
+    title = item.title
+    attributedTitle = nil
+    cachedApplication = nil
+    applicationImage = ApplicationImageCache.shared.getImage(item: item)
+    invalidateTextCache()
     synchronizeItemPin()
     synchronizeItemTitle()
   }
@@ -328,43 +338,30 @@ class HistoryItemDecorator: Identifiable, Hashable {
   }
 
   private func synchronizeItemPin() {
-    pinObservationTask?.cancel()
-    pinObservationTask = Task { @MainActor [weak self] in
-      guard let self = self else { return }
-      while !Task.isCancelled {
-        let currentPin = self.item.pin
-        if let pin = currentPin {
-          self.shortcuts = KeyShortcut.create(character: pin)
-        } else {
-          self.shortcuts = []
-        }
-        // Use withObservationTracking to wait for next change
-        await withCheckedContinuation { continuation in
-          _ = withObservationTracking {
-            _ = self.item.pin
-          } onChange: {
-            continuation.resume()
-          }
-        }
+    if let pin = item.pin {
+      shortcuts = KeyShortcut.create(character: pin)
+    } else {
+      shortcuts = []
+    }
+
+    withObservationTracking {
+      _ = item.pin
+    } onChange: { [weak self] in
+      Task { @MainActor in
+        self?.synchronizeItemPin()
       }
     }
   }
 
   private func synchronizeItemTitle() {
-    titleObservationTask?.cancel()
-    titleObservationTask = Task { @MainActor [weak self] in
-      guard let self = self else { return }
-      while !Task.isCancelled {
-        self.title = self.item.title
-        self.invalidateTextCache()
-        // Use withObservationTracking to wait for next change
-        await withCheckedContinuation { continuation in
-          _ = withObservationTracking {
-            _ = self.item.title
-          } onChange: {
-            continuation.resume()
-          }
-        }
+    title = item.title
+    invalidateTextCache()
+
+    withObservationTracking {
+      _ = item.title
+    } onChange: { [weak self] in
+      Task { @MainActor in
+        self?.synchronizeItemTitle()
       }
     }
   }

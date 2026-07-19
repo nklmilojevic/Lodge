@@ -3,18 +3,21 @@ import KeyboardShortcuts
 import Sauce
 
 enum KeyChord: CaseIterable {
+  @MainActor
   static var pasteKey: Key { pasteMenuItem?.key ?? Key.v }
+  @MainActor
   static var pasteKeyModifiers: NSEvent.ModifierFlags { pasteMenuItem?.keyEquivalentModifierMask ?? .command }
+  @MainActor
   private static var pasteMenuItem: NSMenuItem? {
     NSApp.mainMenu?.items
       .flatMap { $0.submenu?.items ?? [] }
       .first { $0.action == #selector(NSText.paste) }
   }
 
-  static var deleteKey: Key? { Sauce.shared.key(shortcut: .delete) }
+  @MainActor static var deleteKey: Key? { Sauce.shared.key(shortcut: .delete) }
   static var deleteModifiers: NSEvent.ModifierFlags? { KeyboardShortcuts.Shortcut(name: .delete)?.modifiers }
 
-  static var pinKey: Key? { Sauce.shared.key(shortcut: .pin) }
+  @MainActor static var pinKey: Key? { Sauce.shared.key(shortcut: .pin) }
   static var pinModifiers: NSEvent.ModifierFlags? { KeyboardShortcuts.Shortcut(name: .pin)?.modifiers }
 
   case clearHistory
@@ -34,6 +37,7 @@ enum KeyChord: CaseIterable {
   case close
   case unknown
 
+  @MainActor
   init(_ event: NSEvent?) {
     guard let event, event.type == .keyDown else {
       self = .unknown
@@ -59,6 +63,7 @@ enum KeyChord: CaseIterable {
     self.init(key, modifierFlags)
   }
 
+  @MainActor
   init(_ key: Key, _ modifierFlags: NSEvent.ModifierFlags) { // swiftlint:disable:this cyclomatic_complexity
     switch (key, modifierFlags) {
     case (.delete, [.command, .option]):

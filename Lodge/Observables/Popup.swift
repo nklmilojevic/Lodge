@@ -12,6 +12,7 @@ enum PopupState {
 }
 
 @Observable
+@MainActor
 class Popup {
   static let verticalSeparatorPadding = 6.0
   static let horizontalSeparatorPadding = 6.0
@@ -48,10 +49,6 @@ class Popup {
     initEventsMonitor()
   }
 
-  deinit {
-    deinitEventsMonitor()
-  }
-
   func initEventsMonitor() {
     guard eventsMonitor == nil else { return }
 
@@ -65,6 +62,7 @@ class Popup {
     guard let eventsMonitor else { return }
 
     NSEvent.removeMonitor(eventsMonitor)
+    self.eventsMonitor = nil
   }
 
   func open(height: CGFloat, at popupPosition: PopupPosition = Defaults[.popupPosition]) {

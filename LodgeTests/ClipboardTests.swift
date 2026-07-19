@@ -38,6 +38,7 @@ class ClipboardTests: XCTestCase {
     Defaults[.ignoreRegexp] = []
     Defaults[.ignoredApps] = []
     Defaults[.ignoredPasteboardTypes] = []
+    clipboard.sourceAppBundleIdentifierOverride = "com.apple.dt.Xcode"
     clipboard.clearHooks()
   }
 
@@ -51,6 +52,7 @@ class ClipboardTests: XCTestCase {
     Defaults[.ignoreRegexp] = savedIgnoreRegexp
     Defaults[.ignoredApps] = savedIgnoredApps
     Defaults[.ignoredPasteboardTypes] = savedIgnoredPasteboardTypes
+    clipboard.sourceAppBundleIdentifierOverride = nil
     clipboard.clearHooks()
   }
 

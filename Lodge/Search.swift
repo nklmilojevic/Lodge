@@ -2,6 +2,7 @@ import AppKit
 import Defaults
 import Fuse
 
+@MainActor
 class Search {
   enum Mode: String, CaseIterable, Identifiable, CustomStringConvertible, Defaults.Serializable {
     case exact
@@ -47,7 +48,7 @@ class Search {
     }
 
     // Simplified cache key - invalidateCache() is called on content changes
-    let cacheKey = "\(string)_\(Defaults[.searchMode].rawValue)"
+    let cacheKey = "\(string)_\(Defaults[.searchMode].rawValue)_ocr:\(Defaults[.ocrInImages])"
 
     if let cached = searchCache[cacheKey] {
       // Move to end of access order (most recently used)

@@ -4,6 +4,7 @@ import Foundation
 import Settings
 
 @Observable
+@MainActor
 class AppState {
   static let shared = AppState()
 

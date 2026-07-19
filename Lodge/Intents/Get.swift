@@ -4,8 +4,8 @@ import AppIntents
 struct Get: AppIntent, CustomIntentMigratedAppIntent {
   static let intentClassName = "GetIntent"
 
-  static var title: LocalizedStringResource = "Get Item from Clipboard History"
-  static var description = IntentDescription("""
+  static let title: LocalizedStringResource = "Get Item from Clipboard History"
+  static let description = IntentDescription("""
   Gets an item from Lodge clipboard history.
   The returned item can be used to access its plain/rich/HTML text, image contents or file location.
   """)
@@ -15,8 +15,6 @@ struct Get: AppIntent, CustomIntentMigratedAppIntent {
 
   @Parameter(title: "Number", default: 1)
   var number: Int
-
-  private let positionOffset = 1
 
   static var parameterSummary: some ParameterSummary {
     When(\.$selected, .equalTo, false) {
@@ -31,15 +29,15 @@ struct Get: AppIntent, CustomIntentMigratedAppIntent {
     }
   }
 
+  @MainActor
   func perform() async throws -> some IntentResult & ReturnsValue<HistoryItemAppEntity> {
     var item: HistoryItem?
     if selected {
       item = AppState.shared.history.selectedItem?.item
     } else {
-      let index = number - positionOffset
-      if AppState.shared.history.items.count >= index {
-        item = AppState.shared.history.items[index].item
-      }
+      let items = AppState.shared.history.items
+      let index = try HistoryItemPosition.index(number: number, count: items.count)
+      item = items[index].item
     }
 
     guard let item else {

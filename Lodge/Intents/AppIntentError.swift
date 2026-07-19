@@ -9,3 +9,13 @@ enum AppIntentError: Swift.Error, CustomLocalizedStringResourceConvertible {
     }
   }
 }
+
+enum HistoryItemPosition {
+  static func index(number: Int, count: Int) throws -> Int {
+    let index = number - 1
+    guard (0..<count).contains(index) else {
+      throw AppIntentError.notFound
+    }
+    return index
+  }
+}

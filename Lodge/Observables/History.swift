@@ -9,6 +9,7 @@ import Settings
 import SwiftData
 
 @Observable
+@MainActor
 class History { // swiftlint:disable:this type_body_length
   static let shared = History()
   let logger = Logger(label: "com.nklmilojevic.Lodge")
@@ -35,14 +36,8 @@ class History { // swiftlint:disable:this type_body_length
     // If already cached, nothing to do
     guard !item.isTextCached else { return }
 
-    // Compute in background - the view will update when ready
-    Task.detached(priority: .userInitiated) {
-      let text = item.item.previewableText.shortened(to: 5_000)
-      let hash = text.hashValue
-      await MainActor.run {
-        item.precacheText(text, hash: hash)
-      }
-    }
+    let text = item.item.previewableText.shortened(to: 5_000)
+    item.precacheText(text, hash: text.hashValue)
   }
 
   // Cached filtered arrays to avoid repeated filtering on every access
@@ -94,6 +89,8 @@ class History { // swiftlint:disable:this type_body_length
   // Dictionary for O(1) item lookup by ID
   @ObservationIgnored
   private var itemsById: [UUID: HistoryItemDecorator] = [:]
+  @ObservationIgnored
+  private var itemsByFingerprint: [String: HistoryItem] = [:]
 
   /// Fast O(1) lookup of item by ID
   func item(withId id: UUID) -> HistoryItemDecorator? {
@@ -103,6 +100,13 @@ class History { // swiftlint:disable:this type_body_length
   /// Rebuild the items-by-ID dictionary
   private func rebuildItemsIndex() {
     itemsById = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+    itemsByFingerprint = Dictionary(
+      all.compactMap { decorator in
+        let fingerprint = decorator.item.contentFingerprint
+        return fingerprint.isEmpty ? nil : (fingerprint, decorator.item)
+      },
+      uniquingKeysWith: { first, _ in first }
+    )
   }
 
   /// Invalidates all cached filter arrays and rebuilds index. Call this when `items` changes.
@@ -142,6 +146,7 @@ class History { // swiftlint:disable:this type_body_length
   private let search = Search()
   private let sorter = Sorter()
   private let throttler = Throttler(minimumDelay: 0.2)
+  private let repository: HistoryRepository
 
   @ObservationIgnored
   private var sessionLog: [Int: HistoryItem] = [:]
@@ -156,47 +161,66 @@ class History { // swiftlint:disable:this type_body_length
   @ObservationIgnored
   var all: [HistoryItemDecorator] = []
 
-  init() {
-    Task {
+  init(repository: HistoryRepository? = nil) {
+    self.repository = repository ?? .shared
+    Task { [weak self] in
       for await _ in Defaults.updates(.pasteByDefault, initial: false) {
-        updateShortcuts()
+        guard let self else { return }
+        self.updateShortcuts()
       }
     }
 
-    Task {
+    Task { [weak self] in
       for await _ in Defaults.updates(.sortBy, initial: false) {
-        try? await load()
+        guard let self else { return }
+        do {
+          try await self.load()
+        } catch {
+          self.logger.error("Cannot reload history after sort change: \(error)")
+        }
       }
     }
 
-    Task {
+    Task { [weak self] in
       for await _ in Defaults.updates(.pinTo, initial: false) {
-        try? await load()
+        guard let self else { return }
+        do {
+          try await self.load()
+        } catch {
+          self.logger.error("Cannot reload history after pin-position change: \(error)")
+        }
       }
     }
 
-    Task {
+    Task { [weak self] in
       for await _ in Defaults.updates(.showSpecialSymbols, initial: false) {
-        for item in items {
-          await updateTitle(item: item, title: item.item.generateTitle())
+        guard let self else { return }
+        for item in self.items {
+          self.updateTitle(item: item, title: item.item.generateTitle())
         }
       }
     }
 
-    Task {
+    Task { [weak self] in
       for await _ in Defaults.updates(.imageMaxHeight, initial: false) {
-        for item in items {
-          await item.cleanupImages()
+        guard let self else { return }
+        for item in self.items {
+          item.cleanupImages()
         }
       }
     }
 
-    Task {
+    Task { [weak self] in
       for await _ in Defaults.updates(.ocrInImages, initial: false) {
+        guard let self else { return }
+        self.search.invalidateCache()
         if Defaults[.ocrInImages] {
-          await backfillOCRIfNeeded()
+          self.backfillOCRIfNeeded()
         } else {
-          ocrBackfillTask?.cancel()
+          self.ocrBackfillTask?.cancel()
+        }
+        if !self.searchQuery.isEmpty {
+          self.applySearch()
         }
       }
     }
@@ -204,14 +228,20 @@ class History { // swiftlint:disable:this type_body_length
 
   @MainActor
   func load() async throws {
-    // Load first batch immediately (visible items)
-    let initialBatchSize = 100
-    var descriptor = FetchDescriptor<HistoryItem>()
-    descriptor.fetchLimit = initialBatchSize
-    descriptor.sortBy = [SortDescriptor(\.lastCopiedAt, order: .reverse)]
+    // The configured maximum is 999 items, so one stable fetch is both simpler and
+    // safer than offset pagination whose ordering can change between requests.
+    let results = try repository.fetchAll()
+    var needsFingerprintSave = false
+    for item in results where item.contentFingerprint.isEmpty {
+      item.computeContentFingerprint()
+      needsFingerprintSave = true
+    }
+    if needsFingerprintSave {
+      try repository.save()
+    }
 
-    let initialResults = try Storage.shared.context.fetch(descriptor)
-    all = sorter.sort(initialResults).map { HistoryItemDecorator($0) }
+    all = sorter.sort(results).map { HistoryItemDecorator($0) }
+    limitHistorySize(to: Defaults[.size])
     items = all
     invalidateFilterCaches()
     updateShortcuts()
@@ -225,28 +255,6 @@ class History { // swiftlint:disable:this type_body_length
       AppState.shared.popup.needsResize = true
     }
 
-    // Load remaining items in background
-    let batchSize = initialBatchSize
-    Task.detached(priority: .background) { [weak self] in
-      guard let self else { return }
-
-      await MainActor.run {
-        var fullDescriptor = FetchDescriptor<HistoryItem>()
-        fullDescriptor.fetchOffset = batchSize
-
-        guard let remainingResults = try? Storage.shared.context.fetch(fullDescriptor),
-              !remainingResults.isEmpty else {
-          return
-        }
-
-        let remainingDecorators = self.sorter.sort(remainingResults)
-          .map { HistoryItemDecorator($0) }
-        self.all.append(contentsOf: remainingDecorators)
-        self.limitHistorySize(to: Defaults[.size])
-        self.search.invalidateCache()
-      }
-    }
-
     if Defaults[.ocrInImages] {
       backfillOCRIfNeeded()
     }
@@ -255,7 +263,7 @@ class History { // swiftlint:disable:this type_body_length
     preloadUniversalClipboardImages()
 
     // Backfill text stats for legacy items that don't have them stored
-    backfillTextStatsIfNeeded()
+    try await backfillTextStatsIfNeeded()
 
     // Pre-cache text and hash for all items to ensure instant selection
     precacheTextForAllItems()
@@ -274,18 +282,15 @@ class History { // swiftlint:disable:this type_body_length
   ///   - priority: Task priority (use .userInitiated for visible items, .utility for background)
   @MainActor
   private func precacheTextForItems(_ items: [HistoryItemDecorator], priority: TaskPriority) {
-    Task.detached(priority: priority) {
-      for decorator in items {
+    let snapshots = items.map { decorator in
+      (decorator, decorator.item.previewableText.shortened(to: 50_000))
+    }
+    Task(priority: priority) { @MainActor in
+      for (decorator, text) in snapshots {
         if Task.isCancelled { break }
 
-        // Compute text and hash on background thread (the expensive part)
-        let text = decorator.item.previewableText.shortened(to: 50_000)
-        let hash = text.hashValue
-
-        // Store in cache on main thread (fast)
-        await MainActor.run {
-          decorator.precacheText(text, hash: hash)
-        }
+        decorator.precacheText(text, hash: text.hashValue)
+        await Task.yield()
       }
     }
   }
@@ -304,13 +309,13 @@ class History { // swiftlint:disable:this type_body_length
 
   @MainActor
   private func preloadUniversalClipboardImages() {
-    let itemsToPreload = all
-    Task.detached(priority: .utility) {
+    let itemsToPreload = all.filter { $0.item.universalClipboard }
+    guard !itemsToPreload.isEmpty else { return }
+    Task(priority: .utility) { @MainActor in
       for decorator in itemsToPreload {
         if Task.isCancelled { break }
-        if decorator.item.universalClipboard {
-          decorator.item.preloadUniversalClipboardImageData()
-        }
+        decorator.item.preloadUniversalClipboardImageData()
+        await Task.yield()
       }
     }
   }
@@ -318,59 +323,54 @@ class History { // swiftlint:disable:this type_body_length
   /// Backfill text statistics for items that were created before stats were stored in the database.
   /// Also pre-caches text and hash for instant display.
   @MainActor
-  private func backfillTextStatsIfNeeded() {
+  private func backfillTextStatsIfNeeded() async throws {
     // Filter to items that need stats backfill (text items without stored stats)
     let itemsToProcess = all.filter { $0.item.characterCount == 0 && !$0.item.hasImageContent }
     guard !itemsToProcess.isEmpty else { return }
 
-    Task.detached(priority: .background) {
-      for decorator in itemsToProcess {
-        if Task.isCancelled { break }
-
-        // Compute stats on background thread
-        let text = decorator.item.previewableText
-        let charCount = text.count
-        let wordCount = text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count
-
-        await MainActor.run {
-          decorator.item.characterCount = charCount
-          decorator.item.wordCount = wordCount
-
-          // Also pre-cache the text and hash in the decorator for instant display
-          _ = decorator.text
-          _ = decorator.textHash
-        }
-
-        // Small delay to avoid blocking other background work
-        try? await Task.sleep(for: .milliseconds(10))
+    let texts = itemsToProcess.map { $0.item.previewableText }
+    let statistics = await Task.detached(priority: .background) {
+      texts.map { text in
+        (
+          text.count,
+          text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count
+        )
       }
+    }.value
 
-      // Save changes to database
-      await MainActor.run {
-        try? Storage.shared.context.save()
-      }
+    for (decorator, stats) in zip(itemsToProcess, statistics) {
+      decorator.item.characterCount = stats.0
+      decorator.item.wordCount = stats.1
+
+      // Also pre-cache the text and hash in the decorator for instant display
+      _ = decorator.text
+      _ = decorator.textHash
     }
+
+    try repository.save()
   }
 
   @MainActor
   func backfillOCRIfNeeded() {
     ocrBackfillTask?.cancel()
 
-    let itemsToProcess = all
-    ocrBackfillTask = Task.detached(priority: .background) {
+    let itemsToProcess = all.filter(\.hasImage)
+    guard !itemsToProcess.isEmpty else { return }
+    ocrBackfillTask = Task(priority: .background) { @MainActor in
       for item in itemsToProcess {
         if Task.isCancelled { break }
-        await MainActor.run {
-          item.item.scheduleOCRIfNeeded()
-        }
+        item.item.scheduleOCRIfNeeded()
         try? await Task.sleep(for: .milliseconds(30))
       }
     }
   }
 
   @MainActor
-  func refreshSearchResults() {
+  func refreshSearchResults(invalidateCache: Bool = false) {
     guard !searchQuery.isEmpty else { return }
+    if invalidateCache {
+      search.invalidateCache()
+    }
     applySearch()
   }
 
@@ -384,6 +384,13 @@ class History { // swiftlint:disable:this type_body_length
 
     search.invalidateCache()
 
+    do {
+      try repository.delete(itemsToDelete.map(\.item))
+    } catch {
+      logger.error("Cannot enforce history size: \(error)")
+      return
+    }
+
     // Clean up images and remove from in-memory arrays
     for item in itemsToDelete {
       cleanup(item)
@@ -393,39 +400,40 @@ class History { // swiftlint:disable:this type_body_length
     all.removeAll { itemsToDelete.contains($0) }
     items.removeAll { itemsToDelete.contains($0) }
 
-    // Batch delete from database with single save
-    try? Storage.shared.context.transaction {
-      for item in itemsToDelete {
-        Storage.shared.context.delete(item.item)
-      }
-    }
-    try? Storage.shared.context.save()
+    invalidateFilterCaches()
   }
 
   @MainActor
   func insertIntoStorage(_ item: HistoryItem) throws {
     logger.info("Inserting item with id '\(item.title)'")
-    Storage.shared.context.insert(item)
-    Storage.shared.context.processPendingChanges()
-    try? Storage.shared.context.save()
+    try repository.insert(item)
   }
 
   @discardableResult
   @MainActor
   func add(_ item: HistoryItem) -> HistoryItemDecorator {
     search.invalidateCache()
+    if item.contentFingerprint.isEmpty {
+      item.computeContentFingerprint()
+    }
 
     if #available(macOS 15.0, *) {
-      try? History.shared.insertIntoStorage(item)
+      do {
+        try insertIntoStorage(item)
+      } catch {
+        logger.error("Cannot persist new history item: \(error)")
+      }
     } else {
       // On macOS 14 the history item needs to be inserted into storage directly after creating it.
       // It was already inserted after creation in Clipboard.swift
     }
 
     var removedItemIndex: Int?
+    var reusableDecorator: HistoryItemDecorator?
     if let existingHistoryItem = findSimilarItem(item) {
       if isModified(item) == nil {
         item.contents = existingHistoryItem.contents
+        item.contentFingerprint = existingHistoryItem.contentFingerprint
       }
       item.firstCopiedAt = existingHistoryItem.firstCopiedAt
       item.numberOfCopies += existingHistoryItem.numberOfCopies
@@ -435,10 +443,14 @@ class History { // swiftlint:disable:this type_body_length
         item.application = existingHistoryItem.application
       }
       logger.info("Removing duplicate item '\(item.title)'")
-      Storage.shared.context.delete(existingHistoryItem)
+      do {
+        try repository.delete(existingHistoryItem)
+      } catch {
+        logger.error("Cannot remove duplicate history item: \(error)")
+      }
       removedItemIndex = all.firstIndex(where: { $0.item == existingHistoryItem })
       if let removedItemIndex {
-        all.remove(at: removedItemIndex)
+        reusableDecorator = all.remove(at: removedItemIndex)
       }
     } else {
       Task {
@@ -453,7 +465,13 @@ class History { // swiftlint:disable:this type_body_length
     addToSessionLog(item, changeCount: Clipboard.shared.changeCount)
 
     var itemDecorator: HistoryItemDecorator
-    if let pin = item.pin {
+    if let reusableDecorator {
+      reusableDecorator.replaceItem(item)
+      itemDecorator = reusableDecorator
+      if let removedItemIndex {
+        all.insert(itemDecorator, at: removedItemIndex)
+      }
+    } else if let pin = item.pin {
       itemDecorator = HistoryItemDecorator(item, shortcuts: KeyShortcut.create(character: pin))
       // Keep pins in the same place.
       if let removedItemIndex {
@@ -467,21 +485,31 @@ class History { // swiftlint:disable:this type_body_length
         all.insert(itemDecorator, at: index)
       }
 
+    }
+
+    if searchQuery.isEmpty {
       items = all
       invalidateFilterCaches()
-      updateUnpinnedShortcuts()
-      AppState.shared.popup.needsResize = true
+      updateShortcuts()
+    } else {
+      applySearch()
     }
+    do {
+      try repository.save()
+    } catch {
+      logger.error("Cannot save updated history: \(error)")
+    }
+    AppState.shared.popup.needsResize = true
 
     return itemDecorator
   }
 
   @MainActor
-  private func withLogging(_ msg: String, _ block: () throws -> Void) rethrows {
+  private func withLogging(_ msg: String, _ block: () -> Void) {
     // Use in-memory counts instead of database queries to avoid blocking main thread
     let beforeCount = all.count
     logger.info("\(msg) Before: items=\(beforeCount)")
-    try? block()
+    block()
     let afterCount = all.count
     logger.info("\(msg) After: items=\(afterCount)")
   }
@@ -489,6 +517,12 @@ class History { // swiftlint:disable:this type_body_length
   @MainActor
   func clear() {
     search.invalidateCache()
+    do {
+      try repository.deleteUnpinned()
+    } catch {
+      logger.error("Cannot clear unpinned history: \(error)")
+      return
+    }
     withLogging("Clearing history") {
       all.forEach { item in
         if item.isUnpinned {
@@ -499,16 +533,6 @@ class History { // swiftlint:disable:this type_body_length
       sessionLog.removeValues { $0.pin == nil }
       items = all
       invalidateFilterCaches()
-
-      // Note: HistoryItemContent is automatically deleted via cascade rule on HistoryItem.contents
-      try? Storage.shared.context.transaction {
-        try? Storage.shared.context.delete(
-          model: HistoryItem.self,
-          where: #Predicate { $0.pin == nil }
-        )
-      }
-      Storage.shared.context.processPendingChanges()
-      try? Storage.shared.context.save()
     }
 
     Clipboard.shared.clear()
@@ -521,6 +545,12 @@ class History { // swiftlint:disable:this type_body_length
   @MainActor
   func clearAll() {
     search.invalidateCache()
+    do {
+      try repository.deleteAll()
+    } catch {
+      logger.error("Cannot clear history: \(error)")
+      return
+    }
     withLogging("Clearing all history") {
       all.forEach { item in
         cleanup(item)
@@ -529,10 +559,6 @@ class History { // swiftlint:disable:this type_body_length
       sessionLog.removeAll()
       items = all
       invalidateFilterCaches()
-
-      try? Storage.shared.context.delete(model: HistoryItem.self)
-      Storage.shared.context.processPendingChanges()
-      try? Storage.shared.context.save()
     }
 
     Clipboard.shared.clear()
@@ -547,12 +573,13 @@ class History { // swiftlint:disable:this type_body_length
     guard let item else { return }
 
     search.invalidateCache()
-    cleanup(item)
-    withLogging("Removing history item") {
-      Storage.shared.context.delete(item.item)
-      Storage.shared.context.processPendingChanges()
-      try? Storage.shared.context.save()
+    do {
+      try repository.delete(item.item)
+    } catch {
+      logger.error("Cannot remove history item: \(error)")
+      return
     }
+    cleanup(item)
 
     all.removeAll { $0 == item }
     items.removeAll { $0 == item }
@@ -646,9 +673,15 @@ class History { // swiftlint:disable:this type_body_length
       return modifiedItem
     }
 
-    // Search in-memory `all` array for duplicates
-    // This is more reliable than a database query with predicates on computed properties
-    // and is fast for typical history sizes (up to a few thousand items)
+    // Exact copies are overwhelmingly the common case. Their stable fingerprint
+    // avoids repeatedly hashing every Data payload in the full history.
+    if !item.contentFingerprint.isEmpty,
+       let exactMatch = itemsByFingerprint[item.contentFingerprint],
+       exactMatch != item {
+      return exactMatch
+    }
+
+    // Preserve the existing superset semantics for formatted/plain-text variants.
     for decorator in all {
       let existingItem = decorator.item
       if existingItem != item && (existingItem == item || existingItem.supersedes(item)) {
