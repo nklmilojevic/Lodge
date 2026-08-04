@@ -268,6 +268,47 @@ class HistoryItem {
     return image
   }
 
+  /// Pixel dimensions read from the image headers, without decoding the bitmap.
+  var imagePixelSize: NSSize? {
+    if let cachedImage {
+      return cachedImage.size
+    }
+
+    guard let data = imageData,
+          let source = CGImageSourceCreateWithData(data as CFData, nil),
+          let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+          let width = properties[kCGImagePropertyPixelWidth] as? Int,
+          let height = properties[kCGImagePropertyPixelHeight] as? Int else {
+      return nil
+    }
+
+    return NSSize(width: width, height: height)
+  }
+
+  /// Releases decoded image caches. They are recreated on demand, so this is safe
+  /// to call for any item that is no longer on screen.
+  func releaseCachedImages() {
+    cachedImage = nil
+    cachedUniversalClipboardImageData = nil
+    didLoadUniversalClipboardImageData = false
+  }
+
+  /// Decodes a downsampled image straight from the source data, so the
+  /// full-resolution bitmap is never materialized.
+  static func makeThumbnailCGImage(from data: Data, maxPixelSize: Int) -> CGImage? {
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+      return nil
+    }
+
+    let options: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+    ]
+
+    return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+  }
+
   var rtfData: Data? { contentData([.rtf]) }
   var rtf: NSAttributedString? {
     if let cachedRtf {

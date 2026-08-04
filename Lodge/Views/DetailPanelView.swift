@@ -56,8 +56,9 @@ struct PreviewContentView: View {
 
   var body: some View {
     if item.hasImage {
-      // Use item.item.image directly - it's cached in HistoryItem
-      if let image = item.item.image {
+      // Render the downsampled preview. Using item.item.image here decoded the
+      // image at full resolution on the main thread and kept it resident.
+      if let image = item.previewImage {
         Image(nsImage: image)
           .resizable()
           .aspectRatio(contentMode: .fit)
