@@ -6,6 +6,14 @@
         <description>Most recent changes with links to updates.</description>
         <language>en</language>
         <item>
+            <title>1.1.1</title>
+            <pubDate>Tue, 04 Aug 2026 09:00:02 +0000</pubDate>
+            <sparkle:version>8</sparkle:version>
+            <sparkle:shortVersionString>1.1.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/nklmilojevic/Lodge/releases/download/v1.1.1/Lodge.app.zip" length="4653513" type="application/octet-stream" sparkle:edSignature="1ec7BpU+cYVyeQWR9UEmvkksQ4s2vuNDAb+I722oxDvLIacYMU6CE+cMAOd2aN1ZQ+c/gLDI1QxHAC6JI96PBA=="/>
+        </item>
+        <item>
             <title>1.1.0</title>
             <pubDate>Sun, 19 Jul 2026 13:22:38 +0000</pubDate>
             <sparkle:version>7</sparkle:version>
@@ -20,15 +28,6 @@
             <sparkle:shortVersionString>1.0.3</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/nklmilojevic/Lodge/releases/download/v1.0.3/Lodge.app.zip" length="4505755" type="application/octet-stream" sparkle:edSignature="DOtq9kqosb3uhPO6q6LlkHjsiXsqxIQguG1iEATRPnEFDUgswwZWg8fkQi3BFbRRTQrSYtWsdQy8H93IkcYuAQ=="/>
-        </item>
-        <item>
-            <title>1.0.2</title>
-            <pubDate>2026-02-16</pubDate>
-            <releaseNotesLink>https://github.com/nklmilojevic/Lodge/releases/tag/v1.0.2</releaseNotesLink>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/nklmilojevic/Lodge/releases/download/v1.0.2/Lodge.app.zip" length="4505046" type="application/octet-stream" sparkle:edSignature="QN4wQlYhXjFARnJ3YuGnOgjv+EzRmNDEccZGDA2daJOIpgHpXRK0sKGyyFBVrCBekcgoYDLirVm40M++11NrDQ=="/>
-            <sparkle:version>3</sparkle:version>
-            <sparkle:shortVersionString>1.0.2</sparkle:shortVersionString>
         </item>
     </channel>
 </rss>
