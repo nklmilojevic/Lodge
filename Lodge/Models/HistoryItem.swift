@@ -189,6 +189,12 @@ class HistoryItem {
         .joined(separator: "\n")
     } else if let text = text, !text.isEmpty {
       text
+    } else if hasImageContent {
+      // Images have no previewable text, and browsers put an <img> pointing at a
+      // remote URL on the pasteboard alongside the bitmap. Falling through to
+      // `html` below would hand that to the WebKit importer, which fetches the
+      // URL synchronously on the main thread.
+      title
     } else if let rtf = rtf, !rtf.string.isEmpty {
       rtf.string
     } else if let html = html, !html.string.isEmpty {
@@ -215,9 +221,41 @@ class HistoryItem {
     guard let data = htmlData else {
       return nil
     }
-    let parsed = NSAttributedString(html: data, documentAttributes: nil)
+    let parsed = NSAttributedString(html: Self.strippingRemoteResources(from: data), documentAttributes: nil)
     cachedHtml = parsed
     return parsed
+  }
+
+  // Tags that exist only to reference an external resource. None of them contribute
+  // text, but NSAttributedString's HTML importer fetches them synchronously on the
+  // main thread - a dead CDN URL blocked it for 63s in practice.
+  private static let remoteResourceTagsRegex = try? NSRegularExpression(
+    pattern: "<\\s*(img|link|source|embed|iframe|video|audio|object|script|style)\\b[^>]*>"
+      + "(?:.*?<\\s*/\\s*\\1\\s*>)?",
+    options: [.caseInsensitive, .dotMatchesLineSeparators]
+  )
+  private static let cssURLRegex = try? NSRegularExpression(
+    pattern: "url\\s*\\([^)]*\\)",
+    options: [.caseInsensitive]
+  )
+
+  /// Removes external-resource references so the HTML importer never hits the network.
+  /// Only used for text extraction, where these tags carry nothing of value.
+  static func strippingRemoteResources(from data: Data) -> Data {
+    guard let html = String(data: data, encoding: .utf8) else {
+      return data
+    }
+
+    var stripped = html
+    for regex in [remoteResourceTagsRegex, cssURLRegex].compactMap({ $0 }) {
+      stripped = regex.stringByReplacingMatches(
+        in: stripped,
+        range: NSRange(stripped.startIndex..., in: stripped),
+        withTemplate: ""
+      )
+    }
+
+    return stripped.data(using: .utf8) ?? data
   }
 
   var imageData: Data? {
