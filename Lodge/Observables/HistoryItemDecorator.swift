@@ -110,9 +110,11 @@ class HistoryItemDecorator: Identifiable, Hashable {
   var hasImage: Bool { item.hasImageContent }
 
   var imageSizeDescription: String? {
-    guard let image = item.image else { return nil }
-    let width = Int(image.size.width)
-    let height = Int(image.size.height)
+    // Read the dimensions from the image headers. Using `item.image` here decoded a
+    // full-resolution bitmap for every visible image row, and `cachedImage` keeps it.
+    guard let size = item.imagePixelSize else { return nil }
+    let width = Int(size.width)
+    let height = Int(size.height)
     return "\(NSLocalizedString("detail_panel_type_image", comment: "")) (\(width)×\(height))"
   }
 
@@ -266,7 +268,9 @@ class HistoryItemDecorator: Identifiable, Hashable {
 
   @MainActor
   func ensurePreviewImage() {
-    guard item.image != nil else {
+    // `hasImage` is a content-type check, so this no longer decodes just to find
+    // out whether there is an image at all.
+    guard hasImage else {
       return
     }
     guard previewImage == nil else {
@@ -275,16 +279,43 @@ class HistoryItemDecorator: Identifiable, Hashable {
     guard previewImageGenerationTask == nil else {
       return
     }
+    guard let data = item.imageData else {
+      return
+    }
+
+    // Captured here because `previewImageSize` reads NSScreen.
+    let maxPixelSize = Int(max(
+      HistoryItemDecorator.previewImageSize.width,
+      HistoryItemDecorator.previewImageSize.height
+    ))
+
     previewImageGenerationTask = Task { [weak self] in
-      self?.generatePreviewImage()
+      let cgImage = await Task.detached(priority: .userInitiated) {
+        HistoryItem.makeThumbnailCGImage(from: data, maxPixelSize: maxPixelSize)
+      }.value
+
+      guard let self else { return }
+      if let cgImage, !Task.isCancelled {
+        self.previewImage = NSImage(
+          cgImage: cgImage,
+          size: NSSize(width: cgImage.width, height: cgImage.height)
+        )
+      }
+      self.previewImageGenerationTask = nil
     }
   }
 
   @MainActor
   func cleanupImages() {
     previewImageGenerationTask?.cancel()
+    // Clearing this lets a later `ensurePreviewImage()` regenerate the preview.
+    previewImageGenerationTask = nil
     previewImage?.recache()
     previewImage = nil
+    // Drop the decoded full-resolution bitmap too. `sessionLog` holds up to 100
+    // HistoryItems regardless of history eviction, so without this their bitmaps
+    // stay resident for the lifetime of the process.
+    item.releaseCachedImages()
   }
 
   @MainActor
