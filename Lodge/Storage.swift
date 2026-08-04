@@ -159,17 +159,45 @@ final class HistoryRepository {
     try context.save()
   }
 
+  // SwiftData's batch delete does not honour the cascade rule on HistoryItem.contents,
+  // so deleting by model left every content row behind - with a null owner and, for
+  // large values, an orphaned file in _EXTERNAL_DATA. Deleting the objects themselves
+  // does cascade. The item count is capped at 999, so fetching them first is cheap.
   func deleteUnpinned() throws {
-    try context.transaction {
-      try context.delete(model: HistoryItem.self, where: #Predicate { $0.pin == nil })
-    }
-    context.processPendingChanges()
-    try context.save()
+    let unpinned = try context.fetch(
+      FetchDescriptor<HistoryItem>(predicate: #Predicate { $0.pin == nil })
+    )
+    try delete(unpinned)
+    try deleteOrphanedContents()
   }
 
   func deleteAll() throws {
-    try context.delete(model: HistoryItem.self)
-    context.processPendingChanges()
+    try delete(try fetchAll())
+    try deleteOrphanedContents()
+  }
+
+  /// Deletes specific content rows. Needed because reassigning `HistoryItem.contents`
+  /// detaches the rows that were previously attached, leaving them with no owner.
+  func deleteContents(_ contents: [HistoryItemContent]) throws {
+    guard !contents.isEmpty else { return }
+    try context.transaction {
+      contents.forEach(context.delete)
+    }
     try context.save()
+  }
+
+  /// Removes content rows whose owning item is gone, reclaiming their external blob
+  /// files too. Idempotent, so it is safe to run on every launch.
+  @discardableResult
+  func deleteOrphanedContents() throws -> Int {
+    let orphans = try context.fetch(FetchDescriptor<HistoryItemContent>())
+      .filter { $0.item == nil }
+    guard !orphans.isEmpty else { return 0 }
+
+    try context.transaction {
+      orphans.forEach(context.delete)
+    }
+    try context.save()
+    return orphans.count
   }
 }

@@ -230,6 +230,17 @@ class History { // swiftlint:disable:this type_body_length
   func load() async throws {
     // The configured maximum is 999 items, so one stable fetch is both simpler and
     // safer than offset pagination whose ordering can change between requests.
+    // Reclaim content rows (and their external blob files) left behind by earlier
+    // versions. Idempotent, and a no-op once there is nothing to collect.
+    do {
+      let reclaimed = try repository.deleteOrphanedContents()
+      if reclaimed > 0 {
+        logger.info("Removed \(reclaimed) orphaned content rows")
+      }
+    } catch {
+      logger.error("Cannot remove orphaned content rows: \(error)")
+    }
+
     let results = try repository.fetchAll()
     var needsFingerprintSave = false
     for item in results where item.contentFingerprint.isEmpty {
@@ -432,8 +443,18 @@ class History { // swiftlint:disable:this type_body_length
     var reusableDecorator: HistoryItemDecorator?
     if let existingHistoryItem = findSimilarItem(item) {
       if isModified(item) == nil {
+        // The new item was already persisted above, so it owns a full set of content
+        // rows. Adopting the existing item's rows detaches those, and without deleting
+        // them they linger forever with a null owner - one leaked set, plus any external
+        // blob files, for every duplicate copy.
+        let detachedContents = item.contents
         item.contents = existingHistoryItem.contents
         item.contentFingerprint = existingHistoryItem.contentFingerprint
+        do {
+          try repository.deleteContents(detachedContents)
+        } catch {
+          logger.error("Cannot remove detached content rows: \(error)")
+        }
       }
       item.firstCopiedAt = existingHistoryItem.firstCopiedAt
       item.numberOfCopies += existingHistoryItem.numberOfCopies
