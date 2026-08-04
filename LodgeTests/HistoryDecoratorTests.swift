@@ -37,7 +37,6 @@ class HistoryItemDecoratorTests: XCTestCase {
     let itemDecorator = historyItemDecorator(title)
     XCTAssertEqual(itemDecorator.title, title)
     XCTAssertNil(itemDecorator.previewImage)
-    XCTAssertNil(itemDecorator.thumbnailImage)
   }
 
   func testRTF() {
@@ -48,7 +47,6 @@ class HistoryItemDecoratorTests: XCTestCase {
     let itemDecorator = historyItemDecorator(rtf, .rtf)
     XCTAssertEqual(itemDecorator.title, "foo")
     XCTAssertNil(itemDecorator.previewImage)
-    XCTAssertNil(itemDecorator.thumbnailImage)
   }
 
   func testHTML() {
@@ -56,7 +54,6 @@ class HistoryItemDecoratorTests: XCTestCase {
     let itemDecorator = historyItemDecorator(html, .html)
     XCTAssertEqual(itemDecorator.title, "foo")
     XCTAssertNil(itemDecorator.previewImage)
-    XCTAssertNil(itemDecorator.thumbnailImage)
   }
 
   func testImage() {
@@ -65,15 +62,6 @@ class HistoryItemDecoratorTests: XCTestCase {
     itemDecorator.sizeImages()
     XCTAssertEqual(itemDecorator.title, "")
     XCTAssertEqual(itemDecorator.previewImage!.size, image.size)
-    XCTAssertEqual(itemDecorator.thumbnailImage!.size, image.size)
-  }
-
-  // We also need to add test for image with width bigger than max width.
-  func testImageWithHeightBiggerThanMaxHeight() {
-    let image = NSImage(named: "NSApplicationIcon")!
-    let itemDecorator = historyItemDecorator(image)
-    itemDecorator.sizeImages()
-    XCTAssertEqual(itemDecorator.thumbnailImage!.size, NSSize(width: 40, height: 40))
   }
 
   func testFile() {
@@ -81,7 +69,6 @@ class HistoryItemDecoratorTests: XCTestCase {
     let itemDecorator = historyItemDecorator(url)
     XCTAssertEqual(itemDecorator.title, "file:///tmp/foo.bar")
     XCTAssertNil(itemDecorator.previewImage)
-    XCTAssertNil(itemDecorator.thumbnailImage)
   }
 
   func testFileWithEscapedChars() {
@@ -89,14 +76,12 @@ class HistoryItemDecoratorTests: XCTestCase {
     let itemDecorator = historyItemDecorator(url)
     XCTAssertEqual(itemDecorator.title, "file:///tmp/产品培训/产品培训.txt")
     XCTAssertNil(itemDecorator.previewImage)
-    XCTAssertNil(itemDecorator.thumbnailImage)
   }
 
   func testItemWithoutData() {
     let itemDecorator = historyItemDecorator(nil)
     XCTAssertEqual(itemDecorator.title, "")
     XCTAssertNil(itemDecorator.previewImage)
-    XCTAssertNil(itemDecorator.thumbnailImage)
   }
 
   func testUnpinnedByDefault() {

@@ -51,7 +51,8 @@ class HistoryItemDecorator: Identifiable, Hashable {
     return result
   }
 
-  var previewImageGenerationTask: Task<(), Error>?
+  @ObservationIgnored
+  var previewImageGenerationTask: Task<Void, Never>?
   var previewImage: NSImage?
   var applicationImage: ApplicationImage
 
@@ -114,9 +115,10 @@ class HistoryItemDecorator: Identifiable, Hashable {
   var hasImage: Bool { item.hasImageContent }
 
   var imageSizeDescription: String? {
-    guard let image = item.image else { return nil }
-    let width = Int(image.size.width)
-    let height = Int(image.size.height)
+    // Read the dimensions from the image headers rather than decoding the bitmap.
+    guard let size = item.imagePixelSize else { return nil }
+    let width = Int(size.width)
+    let height = Int(size.height)
     return "\(NSLocalizedString("detail_panel_type_image", comment: "")) (\(width)×\(height))"
   }
 
@@ -254,9 +256,19 @@ class HistoryItemDecorator: Identifiable, Hashable {
     synchronizeItemTitle()
   }
 
+  deinit {
+    // All of these are @ObservationIgnored, so they are safe to touch here.
+    pinObservationTask?.cancel()
+    titleObservationTask?.cancel()
+    textStatsTask?.cancel()
+    previewImageGenerationTask?.cancel()
+  }
+
   @MainActor
   func ensurePreviewImage() {
-    guard item.image != nil else {
+    // `hasImage` is a content-type check, so this no longer decodes just to
+    // find out whether there is an image at all.
+    guard hasImage else {
       return
     }
     guard previewImage == nil else {
@@ -265,16 +277,40 @@ class HistoryItemDecorator: Identifiable, Hashable {
     guard previewImageGenerationTask == nil else {
       return
     }
-    previewImageGenerationTask = Task { [weak self] in
-      self?.generatePreviewImage()
+    guard let data = item.imageData else {
+      return
+    }
+
+    // Captured on the main thread - `previewImageSize` reads NSScreen.
+    let targetSize = HistoryItemDecorator.previewImageSize
+    let maxPixelSize = Int(max(targetSize.width, targetSize.height))
+
+    previewImageGenerationTask = Task.detached(priority: .userInitiated) { [weak self] in
+      guard let cgImage = HistoryItem.makeThumbnailCGImage(from: data, maxPixelSize: maxPixelSize),
+            !Task.isCancelled else {
+        await MainActor.run { self?.previewImageGenerationTask = nil }
+        return
+      }
+
+      let size = NSSize(width: cgImage.width, height: cgImage.height)
+      await MainActor.run {
+        guard let self else { return }
+        self.previewImage = NSImage(cgImage: cgImage, size: size)
+        self.previewImageGenerationTask = nil
+      }
     }
   }
 
   @MainActor
   func cleanupImages() {
     previewImageGenerationTask?.cancel()
+    // Clearing this lets a later `ensurePreviewImage()` regenerate the preview.
+    previewImageGenerationTask = nil
     previewImage?.recache()
     previewImage = nil
+    // Drop the decoded full-resolution bitmap too, otherwise evicted and deleted
+    // items keep it resident for the lifetime of the process.
+    item.releaseCachedImages()
   }
 
   @MainActor
@@ -327,25 +363,20 @@ class HistoryItemDecorator: Identifiable, Hashable {
     }
   }
 
+  // `guard let self` must stay inside the loop. Unwrapping it once outside held a
+  // strong reference for the whole (never-ending) task, so the decorator - and via
+  // it the HistoryItem and its decoded bitmaps - could never be deallocated.
   private func synchronizeItemPin() {
     pinObservationTask?.cancel()
     pinObservationTask = Task { @MainActor [weak self] in
-      guard let self = self else { return }
       while !Task.isCancelled {
-        let currentPin = self.item.pin
-        if let pin = currentPin {
+        guard let self else { return }
+        if let pin = self.item.pin {
           self.shortcuts = KeyShortcut.create(character: pin)
         } else {
           self.shortcuts = []
         }
-        // Use withObservationTracking to wait for next change
-        await withCheckedContinuation { continuation in
-          _ = withObservationTracking {
-            _ = self.item.pin
-          } onChange: {
-            continuation.resume()
-          }
-        }
+        await Self.waitForChange { [weak self] in _ = self?.item.pin }
       }
     }
   }
@@ -353,19 +384,59 @@ class HistoryItemDecorator: Identifiable, Hashable {
   private func synchronizeItemTitle() {
     titleObservationTask?.cancel()
     titleObservationTask = Task { @MainActor [weak self] in
-      guard let self = self else { return }
       while !Task.isCancelled {
+        guard let self else { return }
         self.title = self.item.title
         self.invalidateTextCache()
-        // Use withObservationTracking to wait for next change
-        await withCheckedContinuation { continuation in
-          _ = withObservationTracking {
-            _ = self.item.title
-          } onChange: {
-            continuation.resume()
-          }
-        }
+        await Self.waitForChange { [weak self] in _ = self?.item.title }
       }
+    }
+  }
+
+  /// Suspends until a property read by `track` changes, or the surrounding task is
+  /// cancelled. Holds no reference to the decorator while suspended, and resumes on
+  /// cancellation so `deinit` can actually tear the observation loops down.
+  private static func waitForChange(_ track: @escaping () -> Void) async {
+    let resumer = Resumer()
+    await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        resumer.attach(continuation)
+        _ = withObservationTracking(track) { resumer.fire() }
+      }
+    } onCancel: {
+      resumer.fire()
+    }
+  }
+
+  /// Resumes a continuation exactly once. `onChange` and `onCancel` can both fire,
+  /// from any thread, so this needs to be locked.
+  private final class Resumer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var fired = false
+
+    func attach(_ continuation: CheckedContinuation<Void, Never>) {
+      lock.lock()
+      if fired {
+        lock.unlock()
+        continuation.resume()
+        return
+      }
+      self.continuation = continuation
+      lock.unlock()
+    }
+
+    func fire() {
+      lock.lock()
+      guard !fired else {
+        lock.unlock()
+        return
+      }
+      fired = true
+      let continuation = self.continuation
+      self.continuation = nil
+      lock.unlock()
+      continuation?.resume()
     }
   }
 
