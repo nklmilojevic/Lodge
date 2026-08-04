@@ -45,7 +45,9 @@ struct PinValueView: View {
     let hasPlainText = item.text != nil
     let hasImage = item.hasImageContent
     let hasFileURLs = !item.fileURLs.isEmpty
-    let hasRichText = item.rtf != nil || item.html != nil
+    // Check for the data, not the parsed result - parsing HTML invokes the WebKit
+    // importer, which fetches any remote resources synchronously on the main thread.
+    let hasRichText = item.rtfData != nil || item.htmlData != nil
 
     // Consider it text content only if it has plain text and doesn't have images or file URLs
     self._isTextContent = State(initialValue: hasPlainText && !hasImage && !hasFileURLs)
