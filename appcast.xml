@@ -6,6 +6,14 @@
         <description>Most recent changes with links to updates.</description>
         <language>en</language>
         <item>
+            <title>1.2.0</title>
+            <pubDate>Sun, 06 Sep 2026 11:59:15 +0000</pubDate>
+            <sparkle:version>10</sparkle:version>
+            <sparkle:shortVersionString>1.2.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/nklmilojevic/Lodge/releases/download/v1.2.0/Lodge.app.zip" length="7686153" type="application/octet-stream" sparkle:edSignature="rRWY/yJqJa4oVrOWO56AaVzV0B12zM8AtcPy0km78x0/kQeLyVgBulVt8oX7wUi6hU/1PRo/u08G79TzgxZMBA=="/>
+        </item>
+        <item>
             <title>1.1.2</title>
             <pubDate>Tue, 04 Aug 2026 21:44:41 +0000</pubDate>
             <sparkle:version>9</sparkle:version>
@@ -20,14 +28,6 @@
             <sparkle:shortVersionString>1.1.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/nklmilojevic/Lodge/releases/download/v1.1.1/Lodge.app.zip" length="4653513" type="application/octet-stream" sparkle:edSignature="1ec7BpU+cYVyeQWR9UEmvkksQ4s2vuNDAb+I722oxDvLIacYMU6CE+cMAOd2aN1ZQ+c/gLDI1QxHAC6JI96PBA=="/>
-        </item>
-        <item>
-            <title>1.1.0</title>
-            <pubDate>Sun, 19 Jul 2026 13:22:38 +0000</pubDate>
-            <sparkle:version>7</sparkle:version>
-            <sparkle:shortVersionString>1.1.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/nklmilojevic/Lodge/releases/download/v1.1.0/Lodge.app.zip" length="4649623" type="application/octet-stream" sparkle:edSignature="fVxh7EcY2niQoEczCCAfK83IZc+TVnFT2LnMrgQpCPtgTxrNF9gvUlRbdOEChtipNLuGf5N3HR32ivf0O5NHBA=="/>
         </item>
     </channel>
 </rss>
