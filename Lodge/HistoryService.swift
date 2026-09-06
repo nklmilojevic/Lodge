@@ -140,6 +140,9 @@ final class HistoryService {
   }
 
   func edit(_ item: HistoryItem, prepared: PreparedCopy) throws {
+    let pinnedBytes = items.filter { $0.pin != nil && $0 != item }.reduce(Int64(0)) { $0 + $1.payloadByteCount }
+    guard prepared.byteCount + pinnedBytes <= byteLimit else { throw HistoryError.storageLimit }
+    try validateUpdate(item, byteCount: prepared.byteCount)
     let retained = try repository.transaction(updating: [item]) {
       let previous = item.contents
       item.contents = makeContents(prepared)
@@ -149,9 +152,9 @@ final class HistoryService {
       item.normalizedOCRText = nil
       item.imageWidth = 0
       item.imageHeight = 0
-      guard items.filter({ $0.pin != nil || $0 == item }).reduce(Int64(0), { $0 + $1.payloadByteCount }) <= byteLimit
-      else { throw HistoryError.storageLimit }
-      return prune(items)
+      let retained = prune(items)
+      guard retained.contains(item) else { throw HistoryError.storageLimit }
+      return retained
     }
     publish(retained)
   }
@@ -161,17 +164,24 @@ final class HistoryService {
                         width: Int, height: Int) throws -> Bool {
     guard items.contains(where: { $0.uuid == item.uuid }) else { return false }
     if text == nil && item.imageWidth == width && item.imageHeight == height { return false }
+    var byteCount = item.payloadByteCount
+    if let text {
+      byteCount -= Int64((item.ocrText?.utf8.count ?? 0) + (item.normalizedOCRText?.utf8.count ?? 0))
+      byteCount += Int64(text.utf8.count + (normalizedText?.utf8.count ?? 0))
+    }
+    try validateUpdate(item, byteCount: byteCount)
     let previousCount = items.count
     let retained = try repository.transaction(updating: [item]) {
       if let text {
-        item.payloadByteCount -= Int64((item.ocrText?.utf8.count ?? 0) + (item.normalizedOCRText?.utf8.count ?? 0))
         item.ocrText = text
         item.normalizedOCRText = normalizedText
-        item.payloadByteCount += Int64(text.utf8.count + (normalizedText?.utf8.count ?? 0))
       }
+      item.payloadByteCount = byteCount
       item.imageWidth = width
       item.imageHeight = height
-      return prune(items)
+      let retained = prune(items)
+      guard retained.contains(item) else { throw HistoryError.storageLimit }
+      return retained
     }
     publish(retained)
     return retained.count != previousCount
@@ -196,18 +206,34 @@ final class HistoryService {
   }
 
   private func prune(_ candidates: [HistoryItem]) -> [HistoryItem] {
+    let removed = pruningCandidates(candidates)
+    removed.forEach(repository.delete)
+    let removedIDs = Set(removed.map(\.uuid))
+    return candidates.filter { !removedIDs.contains($0.uuid) }
+  }
+
+  private func validateUpdate(_ item: HistoryItem, byteCount: Int64) throws {
+    // Check retention before replacing content rows or changing metadata.
+    guard !pruningCandidates(items, updatedItem: item, updatedByteCount: byteCount).contains(item)
+    else { throw HistoryError.storageLimit }
+  }
+
+  private func pruningCandidates(_ candidates: [HistoryItem], updatedItem: HistoryItem? = nil,
+                                 updatedByteCount: Int64 = 0) -> [HistoryItem] {
+    func byteCount(_ item: HistoryItem) -> Int64 {
+      item == updatedItem ? updatedByteCount : item.payloadByteCount
+    }
     let maxCount = min(999, max(1, Defaults[.size]))
     let unpinned = candidates.filter { $0.pin == nil }.sorted { $0.lastCopiedAt > $1.lastCopiedAt }
-    var bytes = candidates.reduce(Int64(0)) { $0 + $1.payloadByteCount }
+    var bytes = candidates.reduce(Int64(0)) { $0 + byteCount($1) }
     var count = unpinned.count
-    var removed = Set<UUID>()
+    var removed: [HistoryItem] = []
     for item in unpinned.reversed() where count > maxCount || bytes > byteLimit {
-      removed.insert(item.uuid)
-      bytes -= item.payloadByteCount
+      removed.append(item)
+      bytes -= byteCount(item)
       count -= 1
-      repository.delete(item)
     }
-    return candidates.filter { !removed.contains($0.uuid) }
+    return removed
   }
 
   private func publish(_ items: [HistoryItem]) {

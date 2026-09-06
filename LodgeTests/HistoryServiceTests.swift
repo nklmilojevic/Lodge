@@ -114,6 +114,86 @@ final class HistoryServiceTests: XCTestCase {
     XCTAssertGreaterThan(service.byteCount, service.byteLimit)
   }
 
+  func testEditRejectsPruningItsTargetAndRestoresContent() throws {
+    Defaults[.historyDataLimitMB] = 1
+    let original = prepared(String(repeating: "a", count: 170_000), copiedAt: .distantPast)
+    let first = try service.add(original)
+    let second = try service.add(prepared(String(repeating: "b", count: 170_000)))
+    let contentIDs = first.contents.map(\.persistentModelID)
+    saves = 0
+
+    XCTAssertThrowsError(try service.edit(first, prepared: prepared(String(repeating: "c", count: 180_000)))) {
+      XCTAssertEqual($0 as? HistoryError, .storageLimit)
+    }
+
+    XCTAssertEqual(saves, 0)
+    XCTAssertEqual(Set(service.items.map(\.uuid)), [first.uuid, second.uuid])
+    XCTAssertEqual(first.snapshot, original.capture.contents)
+    XCTAssertEqual(first.contents.map(\.persistentModelID), contentIDs)
+    XCTAssertEqual(first.contentFingerprint, original.fingerprint)
+    XCTAssertEqual(first.searchText, original.text)
+    XCTAssertEqual(first.payloadByteCount, original.byteCount)
+    XCTAssertEqual(try repository.fetchAll().count, 2)
+    XCTAssertEqual(try repository.context.fetchCount(FetchDescriptor<HistoryItemContent>()), 2)
+    try repository.transaction { }
+    let reloaded = try ModelContext(container).fetch(FetchDescriptor<HistoryItem>())
+    XCTAssertEqual(reloaded.first { $0.uuid == first.uuid }?.snapshot, original.capture.contents)
+  }
+
+  func testEditCanPruneAnOlderItem() throws {
+    Defaults[.historyDataLimitMB] = 1
+    _ = try service.add(prepared(String(repeating: "a", count: 170_000), copiedAt: .distantPast))
+    let target = try service.add(prepared(String(repeating: "b", count: 170_000)))
+    let update = prepared(String(repeating: "c", count: 180_000))
+
+    try service.edit(target, prepared: update)
+
+    XCTAssertEqual(service.items, [target])
+    XCTAssertEqual(target.searchText, update.text)
+    XCTAssertLessThanOrEqual(service.byteCount, service.byteLimit)
+    XCTAssertEqual(try repository.context.fetchCount(FetchDescriptor<HistoryItemContent>()), 1)
+  }
+
+  func testOCRRejectsPruningItsTargetAndRestoresMetadata() throws {
+    Defaults[.historyDataLimitMB] = 1
+    let first = try addImage(seed: 1, copiedAt: .distantPast)
+    let second = try addImage(seed: 2)
+    try service.setImageMetadata(for: first, text: "old", normalizedText: "old", width: 20, height: 30)
+    let bytes = first.payloadByteCount
+    let text = String(repeating: "x", count: 10_000)
+    saves = 0
+
+    XCTAssertThrowsError(try service.setImageMetadata(for: first, text: text, normalizedText: text,
+                                                     width: 200, height: 300)) {
+      XCTAssertEqual($0 as? HistoryError, .storageLimit)
+    }
+
+    XCTAssertEqual(saves, 0)
+    XCTAssertEqual(Set(service.items.map(\.uuid)), [first.uuid, second.uuid])
+    XCTAssertEqual(first.ocrText, "old")
+    XCTAssertEqual(first.normalizedOCRText, "old")
+    XCTAssertEqual(first.imageWidth, 20)
+    XCTAssertEqual(first.imageHeight, 30)
+    XCTAssertEqual(first.payloadByteCount, bytes)
+    XCTAssertEqual(try repository.fetchAll().count, 2)
+    XCTAssertEqual(try repository.context.fetchCount(FetchDescriptor<HistoryItemContent>()), 2)
+  }
+
+  func testOCRCanPruneAnOlderItem() throws {
+    Defaults[.historyDataLimitMB] = 1
+    _ = try addImage(seed: 1, copiedAt: .distantPast)
+    let target = try addImage(seed: 2)
+    let text = String(repeating: "x", count: 10_000)
+
+    let pruned = try service.setImageMetadata(for: target, text: text, normalizedText: text, width: 200, height: 300)
+
+    XCTAssertTrue(pruned)
+    XCTAssertEqual(service.items, [target])
+    XCTAssertEqual(target.ocrText, text)
+    XCTAssertLessThanOrEqual(service.byteCount, service.byteLimit)
+    XCTAssertEqual(try repository.context.fetchCount(FetchDescriptor<HistoryItemContent>()), 1)
+  }
+
   func testLegacyTextMetadataIsBackfilled() async throws {
     let item = HistoryItem()
     repository.insert(item)
@@ -178,9 +258,16 @@ final class HistoryServiceTests: XCTestCase {
     XCTAssertTrue(history.temporaryStorage)
   }
 
-  private func prepared(_ text: String, changeCount: Int = 1) -> PreparedCopy {
+  private func addImage(seed: UInt8, copiedAt: Date = Date()) throws -> HistoryItem {
+    let capture = CapturedCopy(contents: [ContentSnapshot(type: NSPasteboard.PasteboardType.png.rawValue,
+                                                         value: Data(repeating: seed, count: 515_000))],
+                               application: nil, copiedAt: copiedAt, changeCount: Int(seed))
+    return try service.add(ContentProcessor.prepare(capture))
+  }
+
+  private func prepared(_ text: String, changeCount: Int = 1, copiedAt: Date = Date()) -> PreparedCopy {
     ContentProcessor.prepare(CapturedCopy(contents: [ContentSnapshot(type: NSPasteboard.PasteboardType.string.rawValue,
                                                                     value: Data(text.utf8))],
-                                          application: nil, copiedAt: Date(), changeCount: changeCount))
+                                          application: nil, copiedAt: copiedAt, changeCount: changeCount))
   }
 }
