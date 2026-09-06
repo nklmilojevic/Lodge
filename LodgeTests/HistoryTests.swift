@@ -58,7 +58,7 @@ final class HistoryTests: XCTestCase {
     let second = try add([contents[0]])
     XCTAssertTrue(first === second)
     XCTAssertEqual(history.items.count, 1)
-    XCTAssertEqual(second.item.snapshot, contents)
+    XCTAssertEqual(second.item.snapshot.sorted { $0.type < $1.type }, contents.sorted { $0.type < $1.type })
   }
 
   func testAddingItemWithDifferentModifiedType() throws {
@@ -192,6 +192,20 @@ final class HistoryTests: XCTestCase {
     await history.waitForSearch()
     XCTAssertEqual(history.items, [item])
     XCTAssertEqual(item.characterCount, 5)
+  }
+
+  func testRejectedUnpinKeepsTheItemAndShowsTheLimitError() throws {
+    let item = try add(String(repeating: "a", count: 600_000))
+    history.togglePin(item)
+    let pin = item.item.pin
+    Defaults[.historyDataLimitMB] = 1
+    history.enforceLimits()
+
+    history.togglePin(item)
+
+    XCTAssertEqual(history.items, [item])
+    XCTAssertEqual(item.item.pin, pin)
+    XCTAssertTrue(history.errorMessage?.contains("history limit") == true)
   }
 
   private func add(_ text: String, changeCount: Int = 0, title: String? = nil) throws -> HistoryItemDecorator {

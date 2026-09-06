@@ -29,8 +29,9 @@ The default data limit is 512 MiB. It counts raw data, extracted and normalized
 text, OCR text, and the text preview. SQLite files and indexes can use additional
 space. The oldest unpinned items are removed first. Pinned items remain when the
 limit is reduced. An item that cannot fit with the retained pins is rejected.
-Edits and OCR updates are rejected if retention would remove the updated item.
-This check runs before content rows or metadata change.
+Edits, OCR updates, and pin removal are rejected if retention would remove the
+updated item. This check runs before content rows or metadata change. A rejected
+pin removal keeps the pin and shows a notice about the history limit.
 
 Existing stores receive new metadata one item at a time. The service also
 repairs duplicate UUID defaults and deletes orphaned content rows. Migration

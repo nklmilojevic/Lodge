@@ -5,11 +5,14 @@ import SwiftData
 enum HistoryError: LocalizedError {
   case storageLimit
   case noAvailablePin
+  case unpinLimit
 
   var errorDescription: String? {
     switch self {
     case .storageLimit: return "This item exceeds the history data limit. Increase the limit in Storage settings."
     case .noAvailablePin: return "All pin keys are in use. Remove a pin before adding another."
+    case .unpinLimit:
+      return "The history limit prevents removal of this pin. Delete other history items or increase the limit in Storage settings."
     }
   }
 }
@@ -128,9 +131,14 @@ final class HistoryService {
 
   func setPin(_ pin: String?, for item: HistoryItem) throws {
     if let pin, !availablePins.contains(pin), item.pin != pin { throw HistoryError.noAvailablePin }
+    if pin == nil && pruningCandidates(items, unpinnedItem: item).contains(item) {
+      throw HistoryError.unpinLimit
+    }
     let retained = try repository.transaction(updating: [item]) {
       item.pin = pin
-      return prune(items)
+      let retained = prune(items)
+      guard retained.contains(item) else { throw HistoryError.unpinLimit }
+      return retained
     }
     publish(retained)
   }
@@ -219,12 +227,13 @@ final class HistoryService {
   }
 
   private func pruningCandidates(_ candidates: [HistoryItem], updatedItem: HistoryItem? = nil,
-                                 updatedByteCount: Int64 = 0) -> [HistoryItem] {
+                                 updatedByteCount: Int64 = 0, unpinnedItem: HistoryItem? = nil) -> [HistoryItem] {
     func byteCount(_ item: HistoryItem) -> Int64 {
       item == updatedItem ? updatedByteCount : item.payloadByteCount
     }
     let maxCount = min(999, max(1, Defaults[.size]))
-    let unpinned = candidates.filter { $0.pin == nil }.sorted { $0.lastCopiedAt > $1.lastCopiedAt }
+    let unpinned = candidates.filter { $0.pin == nil || $0 == unpinnedItem }
+      .sorted { $0.lastCopiedAt > $1.lastCopiedAt }
     var bytes = candidates.reduce(Int64(0)) { $0 + byteCount($1) }
     var count = unpinned.count
     var removed: [HistoryItem] = []

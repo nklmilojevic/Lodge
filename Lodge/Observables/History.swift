@@ -163,7 +163,7 @@ final class History {
     do {
       try service.setPin(pin, for: item)
       synchronize(changedID: item.uuid)
-    } catch { report("The pin could not be saved.") }
+    } catch { report((error as? HistoryError)?.errorDescription ?? "The pin could not be saved.") }
   }
 
   func setTitle(_ title: String, for item: HistoryItem) {

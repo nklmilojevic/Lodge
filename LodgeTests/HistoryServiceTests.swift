@@ -114,6 +114,57 @@ final class HistoryServiceTests: XCTestCase {
     XCTAssertGreaterThan(service.byteCount, service.byteLimit)
   }
 
+  func testUnpinRejectsDeletingItsTargetAtTheItemLimit() throws {
+    Defaults[.size] = 1
+    let first = try service.add(prepared("pinned", copiedAt: .distantPast))
+    try service.setPin("b", for: first)
+    let second = try service.add(prepared("newer"))
+    saves = 0
+
+    XCTAssertThrowsError(try service.setPin(nil, for: first)) {
+      XCTAssertEqual($0 as? HistoryError, .unpinLimit)
+    }
+
+    XCTAssertEqual(saves, 0)
+    XCTAssertEqual(first.pin, "b")
+    XCTAssertEqual(Set(service.items.map(\.uuid)), [first.uuid, second.uuid])
+    XCTAssertEqual(try repository.fetchAll().count, 2)
+    XCTAssertEqual(try repository.context.fetchCount(FetchDescriptor<HistoryItemContent>()), 2)
+  }
+
+  func testUnpinRejectsDeletingItsTargetAboveTheByteLimit() throws {
+    let original = prepared(String(repeating: "a", count: 600_000))
+    let item = try service.add(original)
+    try service.setPin("b", for: item)
+    Defaults[.historyDataLimitMB] = 1
+    try service.enforceLimits()
+    saves = 0
+
+    XCTAssertThrowsError(try service.setPin(nil, for: item)) {
+      XCTAssertEqual($0 as? HistoryError, .unpinLimit)
+    }
+
+    XCTAssertEqual(saves, 0)
+    XCTAssertEqual(item.pin, "b")
+    XCTAssertEqual(service.items, [item])
+    XCTAssertEqual(item.snapshot, original.capture.contents)
+    XCTAssertEqual(try repository.fetchAll().count, 1)
+    XCTAssertEqual(try repository.context.fetchCount(FetchDescriptor<HistoryItemContent>()), 1)
+  }
+
+  func testUnpinCanPruneAnOlderItem() throws {
+    Defaults[.size] = 1
+    let target = try service.add(prepared("pinned"))
+    try service.setPin("b", for: target)
+    _ = try service.add(prepared("older", copiedAt: .distantPast))
+
+    try service.setPin(nil, for: target)
+
+    XCTAssertNil(target.pin)
+    XCTAssertEqual(service.items, [target])
+    XCTAssertEqual(try repository.context.fetchCount(FetchDescriptor<HistoryItemContent>()), 1)
+  }
+
   func testEditRejectsPruningItsTargetAndRestoresContent() throws {
     Defaults[.historyDataLimitMB] = 1
     let original = prepared(String(repeating: "a", count: 170_000), copiedAt: .distantPast)
