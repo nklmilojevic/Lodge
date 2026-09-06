@@ -8,8 +8,9 @@ notarization, GitHub Releases, and Sparkle appcast updates.
 1. Enroll in the Apple Developer Program.
 2. Create Developer ID certificates (Developer ID Application).
 3. Install Sparkle tools:
-   - `brew install sparkle` (recommended), or
-   - download from https://github.com/sparkle-project/Sparkle.
+   - Download the official distribution archive from
+     [Sparkle releases](https://github.com/sparkle-project/Sparkle/releases).
+   - Extract the archive and set `SPARKLE_BIN` to its `bin` directory.
 4. Generate Sparkle EdDSA keys:
    - Run `generate_keys` from Sparkle tools.
    - Replace `REPLACE_WITH_SPARKLE_PUBLIC_KEY` in `Lodge/Info.plist`.
@@ -22,8 +23,38 @@ notarization, GitHub Releases, and Sparkle appcast updates.
 
 ## GitHub Actions (recommended)
 
-Use `.github/workflows/release.yml`. Push a tag like `v2.7.0` and the workflow
-builds, signs, notarizes, generates the appcast, and creates a GitHub Release.
+Use the **Release** workflow on `main`. Enter the new version tag and leave
+**Build an existing tag** disabled. For example:
+
+```sh
+gh workflow run release.yml --repo nklmilojevic/Lodge --ref main -f tag=v1.2.0
+```
+
+The workflow installs verified Sparkle tools, runs tests, commits the version
+and build number, and creates the tag. It then builds, signs, notarizes, creates
+the GitHub Release, and updates Sparkle and the Homebrew tap.
+
+The workflow downloads Sparkle 2.9.2 from its official release archive and checks
+the pinned SHA-256 checksum before extraction. Homebrew is not required for
+these tools. The tooling version is separate from the app's framework version.
+
+### Retry a release with an existing tag
+
+If a run failed after creating the tag, start a new run from the corrected
+workflow on `main` and enable **Build an existing tag**:
+
+```sh
+gh workflow run release.yml --repo nklmilojevic/Lodge --ref main \
+  -f tag=v1.2.0 -f existing_tag=true
+```
+
+This uses the current workflow but checks out the existing tag. It verifies the
+tag and app version, runs tests, and builds that exact commit. It does not change
+the tag or increment the build number. Use this mode only to recover the release
+for that version. A new release requires a new tag.
+
+The **Re-run jobs** button uses the workflow from the failed run, so it does not
+apply a later workflow fix.
 
 Required GitHub Secrets:
 
