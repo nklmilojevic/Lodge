@@ -18,7 +18,7 @@ struct Delete: AppIntent, CustomIntentMigratedAppIntent {
     let items = AppState.shared.history.items
     let index = try HistoryItemPosition.index(number: number, count: items.count)
 
-    AppState.shared.history.delete(items[index])
+    guard AppState.shared.history.delete(items[index]) else { throw AppIntentError.storageFailure }
 
     return .result()
   }

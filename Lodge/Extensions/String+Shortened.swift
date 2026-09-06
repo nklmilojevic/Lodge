@@ -1,9 +1,6 @@
 extension String {
   func shortened(to maxLength: Int) -> String {
-    guard count > maxLength else {
-      return self
-    }
-
-    return String(self[...index(startIndex, offsetBy: maxLength)])
+    // Read only the prefix. Counting the full string can block a large-text preview.
+    String(prefix(max(0, maxLength)))
   }
 }

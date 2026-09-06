@@ -17,6 +17,12 @@ class HistoryItemTests: XCTestCase {
     super.tearDown()
   }
 
+  func testPreviewLimitUsesCharactersAndHasNoExtraCharacter() {
+    XCTAssertEqual("abcdef".shortened(to: 3), "abc")
+    XCTAssertEqual("👩🏽‍💻ab".shortened(to: 1), "👩🏽‍💻")
+    XCTAssertEqual("text".shortened(to: 0), "")
+  }
+
   func testTitleForString() {
     let title = "foo"
     let item = historyItem(title)

@@ -42,17 +42,14 @@ struct DetailPanelContentView: View {
       MetadataSectionView(item: item)
         .padding()
     }
-    .task(id: item.id) {
-      // Generate preview image when item changes
-      await MainActor.run {
-        item.ensurePreviewImage()
-      }
-    }
+    .task(id: item.id) { item.ensurePreviewImage() }
+    .onDisappear { item.cleanupImages() }
   }
 }
 
 struct PreviewContentView: View {
   var item: HistoryItemDecorator
+  @State private var showFullText = false
 
   var body: some View {
     if item.hasImage {
@@ -63,14 +60,37 @@ struct PreviewContentView: View {
           .resizable()
           .aspectRatio(contentMode: .fit)
           .clipShape(.rect(cornerRadius: 5))
+      } else if item.previewFailed {
+        Text("Image preview is not available.").foregroundStyle(.secondary)
       } else {
-        // Image is loading
         ProgressView()
           .frame(maxWidth: .infinity, minHeight: 100)
       }
     } else {
-      SelectableText(text: item.text)
-        .frame(maxWidth: .infinity, alignment: .leading)
+      VStack(alignment: .leading, spacing: 8) {
+        SelectableText(text: item.text)
+          .frame(maxWidth: .infinity, alignment: .leading)
+        if item.isTextTruncated {
+          HStack {
+            Text("The preview shows the first 5,000 characters.")
+              .font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            Button("View full text") { showFullText = true }
+          }
+        }
+      }
+      .sheet(isPresented: $showFullText) {
+        VStack(alignment: .leading, spacing: 12) {
+          Text("Full text").font(.headline)
+          SelectableText(text: item.fullText)
+          HStack {
+            Spacer()
+            Button("Close") { showFullText = false }.keyboardShortcut(.cancelAction)
+          }
+        }
+        .padding()
+        .frame(minWidth: 600, idealWidth: 700, minHeight: 400, idealHeight: 500)
+      }
     }
   }
 }

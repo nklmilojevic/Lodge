@@ -17,7 +17,7 @@ struct Clear: AppIntent, CustomIntentMigratedAppIntent {
       try await requestConfirmation()
     }
 
-    AppState.shared.history.clear()
+    guard AppState.shared.history.clear() else { throw AppIntentError.storageFailure }
     return .result()
   }
 }

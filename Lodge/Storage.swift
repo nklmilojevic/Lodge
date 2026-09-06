@@ -8,12 +8,18 @@ class Storage {
   var container: ModelContainer
   var context: ModelContext { container.mainContext }
   private(set) var loadError: String?
-  var size: String {
-    let storeDirectory = Self.storeURL.deletingLastPathComponent()
+  private let location: URL
+
+  func formattedSize() async -> String {
+    let directory = location.deletingLastPathComponent()
+    return await Task.detached(priority: .utility) { Self.directorySize(directory) }.value
+  }
+
+  private nonisolated static func directorySize(_ storeDirectory: URL) -> String {
     guard let enumerator = FileManager.default.enumerator(
       at: storeDirectory,
       includingPropertiesForKeys: [.fileAllocatedSizeKey, .fileSizeKey],
-      options: [.skipsHiddenFiles]
+      options: []
     ) else {
       return ""
     }
@@ -42,21 +48,25 @@ class Storage {
     ]
   }()
 
-  init() {
-    Self.migrateLegacyDatabaseIfNeeded()
-    var config = ModelConfiguration(url: Self.storeURL)
+  init(url: URL? = nil, makeContainer: ((ModelConfiguration) throws -> ModelContainer)? = nil) {
+    location = url ?? Self.storeURL
+    if url == nil && !CommandLine.arguments.contains("enable-testing") {
+      Self.migrateLegacyDatabaseIfNeeded()
+    }
+    var config = ModelConfiguration(url: location)
 
     #if DEBUG
-    if CommandLine.arguments.contains("enable-testing") {
+    if url == nil && CommandLine.arguments.contains("enable-testing") {
       config = ModelConfiguration(isStoredInMemoryOnly: true)
     }
     #endif
 
     do {
-      container = try ModelContainer(for: HistoryItem.self, configurations: config)
+      if let makeContainer { container = try makeContainer(config) }
+      else { container = try ModelContainer(for: HistoryItem.self, configurations: config) }
     } catch {
       loadError = error.localizedDescription
-      NSLog("Cannot load Lodge database; using temporary in-memory storage: \(error)")
+      NSLog("Cannot load Lodge database; using temporary in-memory storage.")
 
       do {
         container = try ModelContainer(
@@ -84,7 +94,7 @@ class Storage {
       try fileManager.createDirectory(at: targetDirectory, withIntermediateDirectories: true)
       try Self.copyStoreFiles(from: legacyURL, to: Self.storeURL)
     } catch {
-      NSLog("Cannot migrate legacy Lodge database from \(legacyURL.path): \(error)")
+      NSLog("Cannot migrate the legacy Lodge database.")
     }
   }
 
@@ -121,83 +131,62 @@ class Storage {
   }
 }
 
-/// Owns SwiftData access so History can be tested independently from persistence details.
+/// Groups each history operation into one save. Failed changes are discarded.
 @MainActor
 final class HistoryRepository {
   static let shared = HistoryRepository()
+  let context: ModelContext
+  private let commit: (ModelContext) throws -> Void
 
-  private let context: ModelContext
-
-  init(context: ModelContext? = nil) {
+  init(context: ModelContext? = nil, commit: @escaping (ModelContext) throws -> Void = { try $0.save() }) {
     self.context = context ?? Storage.shared.context
+    self.context.autosaveEnabled = false
+    self.commit = commit
   }
 
   func fetchAll() throws -> [HistoryItem] {
     try context.fetch(FetchDescriptor<HistoryItem>())
   }
 
-  func insert(_ item: HistoryItem) throws {
+  func transaction<T>(updating items: [HistoryItem] = [], _ operation: () throws -> T) throws -> T {
+    let restore = items.map { $0.rollbackAction() }
+    let interval = AppPerformance.signposter.beginInterval("Save history")
+    defer { AppPerformance.signposter.endInterval("Save history", interval) }
+    do {
+      let result = try operation()
+      context.processPendingChanges()
+      try commit(context)
+      return result
+    } catch {
+      context.processPendingChanges()
+      context.rollback()
+      // SwiftData can retain cached properties after rollback. Restore the values seen by the popup too.
+      restore.forEach { $0() }
+      context.processPendingChanges()
+      throw error
+    }
+  }
+
+  func insert(_ item: HistoryItem) {
     context.insert(item)
+    // Establish the model before setting its relationships on macOS 14.
     context.processPendingChanges()
-    try context.save()
   }
 
-  func save() throws {
-    try context.save()
-  }
-
-  func delete(_ item: HistoryItem) throws {
+  func delete(_ item: HistoryItem) {
     context.delete(item)
-    context.processPendingChanges()
-    try context.save()
   }
 
-  func delete(_ items: [HistoryItem]) throws {
-    try context.transaction {
-      items.forEach(context.delete)
-    }
-    try context.save()
+  func deleteContents(_ contents: [HistoryItemContent]) {
+    contents.forEach(context.delete)
   }
 
-  // SwiftData's batch delete does not honour the cascade rule on HistoryItem.contents,
-  // so deleting by model left every content row behind - with a null owner and, for
-  // large values, an orphaned file in _EXTERNAL_DATA. Deleting the objects themselves
-  // does cascade. The item count is capped at 999, so fetching them first is cheap.
-  func deleteUnpinned() throws {
-    let unpinned = try context.fetch(
-      FetchDescriptor<HistoryItem>(predicate: #Predicate { $0.pin == nil })
-    )
-    try delete(unpinned)
-    try deleteOrphanedContents()
-  }
-
-  func deleteAll() throws {
-    try delete(try fetchAll())
-    try deleteOrphanedContents()
-  }
-
-  /// Deletes specific content rows. Needed because reassigning `HistoryItem.contents`
-  /// detaches the rows that were previously attached, leaving them with no owner.
-  func deleteContents(_ contents: [HistoryItemContent]) throws {
-    guard !contents.isEmpty else { return }
-    try context.transaction {
-      contents.forEach(context.delete)
-    }
-    try context.save()
-  }
-
-  /// Removes content rows whose owning item is gone, reclaiming their external blob
-  /// files too. Idempotent, so it is safe to run on every launch.
   @discardableResult
   func deleteOrphanedContents() throws -> Int {
-    let orphans = try context.fetch(FetchDescriptor<HistoryItemContent>())
-      .filter { $0.item == nil }
-    guard !orphans.isEmpty else { return 0 }
-
-    try context.transaction {
-      orphans.forEach(context.delete)
-    }
-    try context.save()
+    let orphans = try context.fetch(
+      FetchDescriptor<HistoryItemContent>(predicate: #Predicate { $0.item == nil })
+    )
+    orphans.forEach(context.delete)
     return orphans.count
   }
 }

@@ -13,7 +13,7 @@ class Notifier {
   }
 
   static func notify(body: String?, sound: NSSound?) {
-    guard let body else { return }
+    guard !AppPreferences.isTesting, let body else { return }
 
     authorize()
 

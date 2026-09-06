@@ -4,11 +4,9 @@ import Defaults
 import ImageIO
 import Sauce
 import SwiftData
-import Vision
 
 @Model
 class HistoryItem {
-  private static let ocrMaxLength = 10_000
 
   // Pre-compiled regex patterns for generateTitle() to avoid repeated compilation
   private static let leadingSpacesRegex = try? NSRegularExpression(pattern: "^ +")
@@ -38,31 +36,15 @@ class HistoryItem {
     return keys
   }
 
-  @MainActor
-  static var availablePins: [String] {
-    let descriptor = FetchDescriptor<HistoryItem>(
-      predicate: #Predicate { $0.pin != nil }
-    )
-    let pins = try? Storage.shared.context.fetch(descriptor).compactMap({ $0.pin })
-    let assignedPins = Set(pins ?? [])
-    return Array(supportedPins.subtracting(assignedPins))
-  }
-
-  @MainActor
-  static var randomAvailablePin: String { availablePins.randomElement() ?? "" }
-
-  private static let transientTypes: [String] = [
-    NSPasteboard.PasteboardType.modified.rawValue,
-    NSPasteboard.PasteboardType.fromLodge.rawValue,
-    NSPasteboard.PasteboardType.linkPresentationMetadata.rawValue,
-    NSPasteboard.PasteboardType.customWebKitPasteboardData.rawValue,
-    NSPasteboard.PasteboardType.source.rawValue,
-    NSPasteboard.PasteboardType.customChromiumWebData.rawValue,
-    NSPasteboard.PasteboardType.chromiumSourceUrl.rawValue,
-    NSPasteboard.PasteboardType.chromiumSourceToken.rawValue,
-    NSPasteboard.PasteboardType.notesRichText.rawValue
-  ]
-
+  var uuid: UUID = UUID()
+  var searchText: String?
+  var normalizedSearchText: String?
+  var normalizedOCRText: String?
+  var previewText: String?
+  var metadataVersion: Int = 0
+  var payloadByteCount: Int64 = 0
+  var imageWidth: Int = 0
+  var imageHeight: Int = 0
   var application: String?
   // Note: Indexes would improve query performance but require macOS 15+
   // @Attribute(.index) is not available in macOS 14's SwiftData
@@ -80,11 +62,9 @@ class HistoryItem {
 
   // Cached parsed values to avoid repeated parsing
   @Transient private var cachedRtf: NSAttributedString?
-  @Transient private var cachedHtml: NSAttributedString?
   @Transient private var cachedImage: NSImage?
   @Transient private var cachedUniversalClipboardImageData: Data?
   @Transient private var didLoadUniversalClipboardImageData = false
-  @Transient private var isOCRInProgress = false
 
   @Relationship(deleteRule: .cascade, inverse: \HistoryItemContent.item)
   var contents: [HistoryItemContent] = []
@@ -95,65 +75,98 @@ class HistoryItem {
     self.contents = contents
   }
 
-  func supersedes(_ item: HistoryItem) -> Bool {
-    // Build a set for O(1) lookups instead of O(n) nested iteration
-    let myContentKeys = Set(contents.map { ContentKey(type: $0.type, value: $0.value) })
-
-    return item.contents
-      .filter { content in
-        !Self.transientTypes.contains(content.type)
-      }
-      .allSatisfy { content in
-        myContentKeys.contains(ContentKey(type: content.type, value: content.value))
-      }
-  }
-
-  /// Helper struct for efficient content comparison in supersedes()
-  private struct ContentKey: Hashable {
-    let type: String
-    let value: Data?
-  }
-
-  /// Compute and store text statistics. Call this when the item is first created.
-  func computeTextStats() {
-    let textContent = previewableText
-    characterCount = textContent.count
-    wordCount = textContent.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count
-  }
-
-  /// Creates a stable digest once so common exact duplicates can be found in O(1).
-  func computeContentFingerprint() {
-    let digests = contents
-      .filter { !Self.transientTypes.contains($0.type) }
-      .map { content -> String in
-        var hasher = SHA256()
-        hasher.update(data: Data(content.type.utf8))
-        hasher.update(data: Data([0]))
-        if let value = content.value {
-          hasher.update(data: value)
-        }
-        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
-      }
-      .sorted()
-
-    guard !digests.isEmpty else {
-      contentFingerprint = ""
-      return
+  @MainActor
+  func rollbackAction() -> () -> Void {
+    let uuid = uuid
+    let normalizedSearchText = normalizedSearchText
+    let normalizedOCRText = normalizedOCRText
+    let application = application
+    let firstCopiedAt = firstCopiedAt
+    let lastCopiedAt = lastCopiedAt
+    let numberOfCopies = numberOfCopies
+    let pin = pin
+    let title = title
+    let ocrText = ocrText
+    let contentFingerprint = contentFingerprint
+    let characterCount = characterCount
+    let wordCount = wordCount
+    let searchText = searchText
+    let previewText = previewText
+    let metadataVersion = metadataVersion
+    let payloadByteCount = payloadByteCount
+    let imageWidth = imageWidth
+    let imageHeight = imageHeight
+    let contents = contents
+    let fingerprints = contents.map(\.fingerprint)
+    return { [self] in
+      self.uuid = uuid
+      self.normalizedSearchText = normalizedSearchText
+      self.normalizedOCRText = normalizedOCRText
+      self.application = application
+      self.firstCopiedAt = firstCopiedAt
+      self.lastCopiedAt = lastCopiedAt
+      self.numberOfCopies = numberOfCopies
+      self.pin = pin
+      self.title = title
+      self.ocrText = ocrText
+      self.contentFingerprint = contentFingerprint
+      self.characterCount = characterCount
+      self.wordCount = wordCount
+      self.searchText = searchText
+      self.previewText = previewText
+      self.metadataVersion = metadataVersion
+      self.payloadByteCount = payloadByteCount
+      self.imageWidth = imageWidth
+      self.imageHeight = imageHeight
+      self.contents = contents
+      for (content, fingerprint) in zip(contents, fingerprints) { content.fingerprint = fingerprint }
     }
+  }
 
-    let digest = SHA256.hash(data: Data(digests.joined(separator: ":").utf8))
-    contentFingerprint = digest.map { String(format: "%02x", $0) }.joined()
+  func supersedes(_ item: HistoryItem) -> Bool {
+    let keys = Set(contents.map { $0.contentDigest })
+    return item.contents.filter { !ContentProcessor.transientTypes.contains($0.type) }
+      .allSatisfy { keys.contains($0.contentDigest) }
+  }
+
+  var snapshot: [ContentSnapshot] {
+    contents.map { ContentSnapshot(type: $0.type, value: $0.value) }
+  }
+
+  func apply(_ prepared: PreparedCopy) {
+    contentFingerprint = prepared.fingerprint
+    searchText = prepared.text
+    normalizedSearchText = prepared.normalizedText
+    previewText = prepared.preview
+    characterCount = prepared.characterCount
+    wordCount = prepared.wordCount
+    payloadByteCount = prepared.byteCount
+    metadataVersion = 1
+    for (content, digest) in zip(contents, prepared.fingerprints) {
+      content.fingerprint = digest
+    }
+  }
+
+  // Used when constructing model fixtures. Capture and migration use worker tasks.
+  func computeTextStats() {
+    let prepared = ContentProcessor.prepare(CapturedCopy(
+      contents: snapshot, application: application, copiedAt: lastCopiedAt, changeCount: 0
+    ))
+    apply(prepared)
+  }
+
+  func computeContentFingerprint() {
+    computeTextStats()
   }
 
   @MainActor
   func generateTitle() -> String {
     guard !hasImageContent else {
-      scheduleOCRIfNeeded()
       return title
     }
 
     // 1k characters is trade-off for performance
-    var title = previewableText.shortened(to: 1_000)
+    var title = (previewText ?? previewableText).shortened(to: 1_000)
 
     if Defaults[.showSpecialSymbols] {
       // Replace leading spaces with visible dots using pre-compiled regex
@@ -183,25 +196,7 @@ class HistoryItem {
   }
 
   var previewableText: String {
-    if !fileURLs.isEmpty {
-      fileURLs
-        .compactMap { $0.absoluteString.removingPercentEncoding }
-        .joined(separator: "\n")
-    } else if let text = text, !text.isEmpty {
-      text
-    } else if hasImageContent {
-      // Images have no previewable text, and browsers put an <img> pointing at a
-      // remote URL on the pasteboard alongside the bitmap. Falling through to
-      // `html` below would hand that to the WebKit importer, which fetches the
-      // URL synchronously on the main thread.
-      title
-    } else if let rtf = rtf, !rtf.string.isEmpty {
-      rtf.string
-    } else if let html = html, !html.string.isEmpty {
-      html.string
-    } else {
-      title
-    }
+    searchText ?? ContentProcessor.plainText(snapshot)
   }
 
   var fileURLs: [URL] {
@@ -215,47 +210,14 @@ class HistoryItem {
 
   var htmlData: Data? { contentData([.html]) }
   var html: NSAttributedString? {
-    if let cachedHtml {
-      return cachedHtml
-    }
-    guard let data = htmlData else {
-      return nil
-    }
-    let parsed = NSAttributedString(html: Self.strippingRemoteResources(from: data), documentAttributes: nil)
-    cachedHtml = parsed
-    return parsed
+    guard let data = htmlData else { return nil }
+    return NSAttributedString(string: ContentProcessor.plainText([ContentSnapshot(type: NSPasteboard.PasteboardType.html.rawValue, value: data)]))
   }
 
-  // Tags that exist only to reference an external resource. None of them contribute
-  // text, but NSAttributedString's HTML importer fetches them synchronously on the
-  // main thread - a dead CDN URL blocked it for 63s in practice.
-  private static let remoteResourceTagsRegex = try? NSRegularExpression(
-    pattern: "<\\s*(img|link|source|embed|iframe|video|audio|object|script|style)\\b[^>]*>"
-      + "(?:.*?<\\s*/\\s*\\1\\s*>)?",
-    options: [.caseInsensitive, .dotMatchesLineSeparators]
-  )
-  private static let cssURLRegex = try? NSRegularExpression(
-    pattern: "url\\s*\\([^)]*\\)",
-    options: [.caseInsensitive]
-  )
-
-  /// Removes external-resource references so the HTML importer never hits the network.
-  /// Only used for text extraction, where these tags carry nothing of value.
-  static func strippingRemoteResources(from data: Data) -> Data {
-    guard let html = String(data: data, encoding: .utf8) else {
-      return data
-    }
-
-    var stripped = html
-    for regex in [remoteResourceTagsRegex, cssURLRegex].compactMap({ $0 }) {
-      stripped = regex.stringByReplacingMatches(
-        in: stripped,
-        range: NSRange(stripped.startIndex..., in: stripped),
-        withTemplate: ""
-      )
-    }
-
-    return stripped.data(using: .utf8) ?? data
+  var imageSource: ImageSource? {
+    if let data = contentData([.tiff, .png, .jpeg, .heic]) { return .data(data) }
+    if (universalClipboardImage || fileURLImage), let url = fileURLs.first { return .file(url) }
+    return nil
   }
 
   var imageData: Data? {
@@ -275,23 +237,6 @@ class HistoryItem {
     }
 
     return data
-  }
-
-  /// Preload image data from file URLs in background to avoid blocking main thread
-  @MainActor
-  func preloadUniversalClipboardImageData() {
-    guard !didLoadUniversalClipboardImageData,
-          (universalClipboardImage || fileURLImage),
-          let url = fileURLs.first else {
-      return
-    }
-
-    Task(priority: .utility) { [weak self] in
-      let data = await Self.loadData(from: url)
-      guard let self else { return }
-      self.cachedUniversalClipboardImageData = data
-      self.didLoadUniversalClipboardImageData = true
-    }
   }
 
   var image: NSImage? {
@@ -417,67 +362,4 @@ class HistoryItem {
       .compactMap { $0.value }
   }
 
-  @MainActor
-  func scheduleOCRIfNeeded() {
-    guard Defaults[.ocrInImages], ocrText == nil, !isOCRInProgress else {
-      return
-    }
-
-    let embeddedData = contentData([.tiff, .png, .jpeg, .heic])
-    let fileURL = embeddedData == nil && (universalClipboardImage || fileURLImage) ? fileURLs.first : nil
-    guard embeddedData != nil || fileURL != nil else { return }
-
-    isOCRInProgress = true
-    Task(priority: .utility) { [weak self] in
-      let data: Data?
-      if let embeddedData {
-        data = embeddedData
-      } else if let fileURL {
-        data = await Self.loadData(from: fileURL)
-      } else {
-        data = nil
-      }
-
-      guard let self else { return }
-      guard let data, let recognizedText = await Self.recognizeText(in: data) else {
-        self.isOCRInProgress = false
-        return
-      }
-
-      self.isOCRInProgress = false
-      self.ocrText = recognizedText
-      if !History.shared.searchQuery.isEmpty {
-        History.shared.refreshSearchResults(invalidateCache: true)
-      }
-    }
-  }
-
-  private nonisolated static func loadData(from url: URL) async -> Data? {
-    await Task.detached(priority: .utility) {
-      try? Data(contentsOf: url)
-    }.value
-  }
-
-  private nonisolated static func recognizeText(in data: Data) async -> String? {
-    await Task.detached(priority: .utility) { () -> String? in
-      guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-            let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
-        return nil
-      }
-
-      let request = VNRecognizeTextRequest()
-      request.recognitionLevel = .fast
-
-      do {
-        try VNImageRequestHandler(cgImage: cgImage, options: [:]).perform([request])
-      } catch {
-        return nil
-      }
-
-      return (request.results ?? [])
-        .compactMap { $0.topCandidates(1).first?.string }
-        .joined(separator: "\n")
-        .shortened(to: Self.ocrMaxLength)
-    }.value
-  }
 }

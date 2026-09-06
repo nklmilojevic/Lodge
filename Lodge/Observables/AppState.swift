@@ -72,14 +72,49 @@ class AppState {
   private let about = About()
   private var settingsWindowController: SettingsWindowController?
 
-  init() {
-    history = History.shared
+  init(history: History? = nil) {
+    self.history = history ?? History.shared
     footer = Footer()
     popup = Popup()
+    self.history.onResultsChange = { [weak self] selectFirst in
+      guard let self else { return }
+      if selectFirst || self.history.selectedItem == nil {
+        self.selection = self.history.items.first?.id
+      }
+      self.popup.needsResize = true
+    }
+    self.history.onClear = { [weak self] in
+      Clipboard.shared.clear()
+      self?.popup.close()
+    }
+    self.history.onSelect = { [weak self] in self?.selectHistoryItem($0) }
+    self.history.onNewItem = { Notifier.notify(body: $0, sound: .write) }
+  }
+
+  private func selectHistoryItem(_ item: HistoryItemDecorator) {
+    let flags = NSApp.currentEvent?.modifierFlags.intersection(.deviceIndependentFlagsMask)
+      .subtracting([.capsLock, .numericPad, .function]) ?? []
+    let action: HistoryItemAction
+    if flags.isEmpty {
+      action = Defaults[.pasteByDefault] ? (Defaults[.removeFormattingByDefault] ? .pasteWithoutFormatting : .paste) : .copy
+    } else { action = HistoryItemAction(flags) }
+    guard action != .unknown else { return }
+    popup.close()
+    Clipboard.shared.copy(item.item, removeFormatting: action == .pasteWithoutFormatting ||
+                          (flags.isEmpty && Defaults[.removeFormattingByDefault]))
+    if action == .paste || action == .pasteWithoutFormatting { Clipboard.shared.paste() }
   }
 
   @MainActor
   func select() {
+    if history.isSearching {
+      Task { [weak self] in
+        guard let self else { return }
+        await self.history.waitForSearch()
+        self.select()
+      }
+      return
+    }
     if let item = history.selectedItem, history.items.contains(item) {
       history.select(item)
     } else if let item = footer.selectedItem {

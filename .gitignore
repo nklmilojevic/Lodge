@@ -1,5 +1,8 @@
 xcuserdata/
-Lodge.xcodeproj/project.xcworkspace/xcshareddata
+Lodge.xcodeproj/project.xcworkspace/xcshareddata/*
+!Lodge.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+Lodge.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/*
+!Lodge.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 .idea
 .DS_Store
 Lodge/.DS_Store

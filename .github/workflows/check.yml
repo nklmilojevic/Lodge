@@ -1,0 +1,33 @@
+name: Check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run unit tests
+        run: >-
+          xcodebuild -project Lodge.xcodeproj -scheme Lodge
+          -configuration Debug -destination 'platform=macOS'
+          -derivedDataPath "$RUNNER_TEMP/LodgeBuild"
+          -resultBundlePath "$RUNNER_TEMP/LodgeTests.xcresult"
+          -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile
+          CODE_SIGNING_ALLOWED=NO test
+      - name: Keep test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: ${{ runner.temp }}/LodgeTests.xcresult

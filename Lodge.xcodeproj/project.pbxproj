@@ -25,7 +25,6 @@
 		DA05B5142C234DCF006980FE /* HistoryItemContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA05B5122C234DCF006980FE /* HistoryItemContent.swift */; };
 		DA05B5152C234DCF006980FE /* HistoryItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA05B5132C234DCF006980FE /* HistoryItem.swift */; };
 		DA083A6E2C42E8E8004259A0 /* NSImage+Resized.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA083A6D2C42E8E8004259A0 /* NSImage+Resized.swift */; };
-		DA0EE7B9204657830025FC60 /* LodgeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0EE7B8204657830025FC60 /* LodgeUITests.swift */; };
 		DA0EF1881E444B2A00E58577 /* Clipboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0EF1871E444B2A00E58577 /* Clipboard.swift */; };
 		DA0FFA2A2C8D100C00A66C97 /* ModifierFlags+Description.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0FFA292C8D0FEC00A66C97 /* ModifierFlags+Description.swift */; };
 		DA13D7CA2C19F52B00FA9E23 /* LaunchAtLogin in Frameworks */ = {isa = PBXBuildFile; productRef = DA13D7C92C19F52B00FA9E23 /* LaunchAtLogin */; };
@@ -128,16 +127,20 @@
 		DAFE2DDA268A521B00990986 /* String+Shortened.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAFE2DD9268A521A00990986 /* String+Shortened.swift */; };
 		DAFE2DE9268A9B1B00990986 /* HistoryItemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAFE2DE8268A9B1B00990986 /* HistoryItemTests.swift */; };
 		DAFEF0B8249D7DEE006029E8 /* KeyboardShortcuts.Name+Shortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAFEF0B7249D7DEE006029E8 /* KeyboardShortcuts.Name+Shortcuts.swift */; };
+		158FCB7917FE421E9A654FE3 /* ContentProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7192961EA201427697E4AFA5 /* ContentProcessor.swift */; };
+		E572D8EB2EA24DB7BC2425F5 /* HistoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D54B9C6BCA48417B92C889C4 /* HistoryService.swift */; };
+		DDCC2F23C0984167B0D65097 /* ClipboardScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2720E7D27554409B94D577D /* ClipboardScheduler.swift */; };
+		111B8F8542E9407F99D4E0F6 /* ImageProcessingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6ED47AFE82D642A98A73DF29 /* ImageProcessingService.swift */; };
+		5800816E584F4D06BCBD88B0 /* HistoryServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20B8AD836414DA0A897F08F /* HistoryServiceTests.swift */; };
+		0D5C8D3CCC5E45E78A683259 /* ImageProcessingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCA7F1F9D4E549EA82E3299D /* ImageProcessingTests.swift */; };
+		046B66002DC84C959F3C4E49 /* PerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF206631FD064BBB90E33D03 /* PerformanceTests.swift */; };
+		217A66B838C44E3197938645 /* ThrottlerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0C13670D3374765B4C963B6 /* ThrottlerTests.swift */; };
+		929D361FD8874DF5B1AE5F48 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = 45FC5D8B1E9E4A7390E7FB5B /* SwiftSoup */; };
+		D6629085BD6F4C559C8D5ED5 /* Performance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 619B5C83191F48CF9B1B3237 /* Performance.swift */; };
+		860FFAFDB4704A719D60AD16 /* MigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A660FBC3AB5142F8AFC17C3A /* MigrationTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		DA0EE7BB204657840025FC60 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = DAEE383B1E3DBEB100DD2966 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = DAEE38421E3DBEB100DD2966;
-			remoteInfo = Lodge;
-		};
 		DA360DB51E3DF137005C6F6B /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = DAEE383B1E3DBEB100DD2966 /* Project object */;
@@ -207,8 +210,6 @@
 		DA0D57832E424784005101AF /* vi */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = vi; path = vi.lproj/PinsSettings.strings; sourceTree = "<group>"; };
 		DA0D57842E424784005101AF /* vi */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = vi; path = vi.lproj/PreviewItemView.strings; sourceTree = "<group>"; };
 		DA0D57852E424784005101AF /* vi */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = vi; path = vi.lproj/Localizable.strings; sourceTree = "<group>"; };
-		DA0EE7B6204657830025FC60 /* LodgeUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LodgeUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		DA0EE7B8204657830025FC60 /* LodgeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LodgeUITests.swift; sourceTree = "<group>"; };
 		DA0EF1871E444B2A00E58577 /* Clipboard.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Clipboard.swift; sourceTree = "<group>"; };
 		DA0FFA292C8D0FEC00A66C97 /* ModifierFlags+Description.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ModifierFlags+Description.swift"; sourceTree = "<group>"; };
 		DA13D7D12C19F91B00FA9E23 /* Defaults.Keys+Names.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Defaults.Keys+Names.swift"; sourceTree = "<group>"; };
@@ -520,16 +521,19 @@
 		DAFE2DD9268A521A00990986 /* String+Shortened.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "String+Shortened.swift"; sourceTree = "<group>"; };
 		DAFE2DE8268A9B1B00990986 /* HistoryItemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryItemTests.swift; sourceTree = "<group>"; };
 		DAFEF0B7249D7DEE006029E8 /* KeyboardShortcuts.Name+Shortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "KeyboardShortcuts.Name+Shortcuts.swift"; sourceTree = "<group>"; };
+		7192961EA201427697E4AFA5 /* ContentProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentProcessor.swift; sourceTree = "<group>"; };
+		D54B9C6BCA48417B92C889C4 /* HistoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryService.swift; sourceTree = "<group>"; };
+		E2720E7D27554409B94D577D /* ClipboardScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardScheduler.swift; sourceTree = "<group>"; };
+		6ED47AFE82D642A98A73DF29 /* ImageProcessingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageProcessingService.swift; sourceTree = "<group>"; };
+		D20B8AD836414DA0A897F08F /* HistoryServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryServiceTests.swift; sourceTree = "<group>"; };
+		CCA7F1F9D4E549EA82E3299D /* ImageProcessingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageProcessingTests.swift; sourceTree = "<group>"; };
+		BF206631FD064BBB90E33D03 /* PerformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceTests.swift; sourceTree = "<group>"; };
+		C0C13670D3374765B4C963B6 /* ThrottlerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThrottlerTests.swift; sourceTree = "<group>"; };
+		619B5C83191F48CF9B1B3237 /* Performance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Performance.swift; sourceTree = "<group>"; };
+		A660FBC3AB5142F8AFC17C3A /* MigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MigrationTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		DA0EE7B3204657830025FC60 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		DA360DAD1E3DF137005C6F6B /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -541,6 +545,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				929D361FD8874DF5B1AE5F48 /* SwiftSoup in Frameworks */,
 				2F39CB042AD9A93C00B749FD /* Sparkle in Frameworks */,
 				DA009955256414E60030E697 /* KeyboardShortcuts in Frameworks */,
 				DAC0CA3E2C88E7A4003BF498 /* Fuse in Frameworks */,
@@ -603,14 +608,6 @@
 			path = Models;
 			sourceTree = "<group>";
 		};
-		DA0EE7B7204657830025FC60 /* LodgeUITests */ = {
-			isa = PBXGroup;
-			children = (
-				DA0EE7B8204657830025FC60 /* LodgeUITests.swift */,
-			);
-			path = LodgeUITests;
-			sourceTree = "<group>";
-		};
 		DA181178247D150B00066D55 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
@@ -667,6 +664,11 @@
 		DA360DB11E3DF137005C6F6B /* LodgeTests */ = {
 			isa = PBXGroup;
 			children = (
+				A660FBC3AB5142F8AFC17C3A /* MigrationTests.swift */,
+				C0C13670D3374765B4C963B6 /* ThrottlerTests.swift */,
+				BF206631FD064BBB90E33D03 /* PerformanceTests.swift */,
+				CCA7F1F9D4E549EA82E3299D /* ImageProcessingTests.swift */,
+				D20B8AD836414DA0A897F08F /* HistoryServiceTests.swift */,
 				DA48AE852A5F0077006D4894 /* Fixtures */,
 				DA3CE7FF1E44A62500B3AA98 /* ClipboardTests.swift */,
 				DAE2850123225BD90080E394 /* ColorImageTests.swift */,
@@ -730,7 +732,6 @@
 			children = (
 				DAEE38451E3DBEB100DD2966 /* Lodge */,
 				DA360DB11E3DF137005C6F6B /* LodgeTests */,
-				DA0EE7B7204657830025FC60 /* LodgeUITests */,
 				DACCD5822C93605C00BAD74C /* Lodge.xctestplan */,
 				DA00992C256411F90030E697 /* appcast.xml */,
 				DA00992F256411F90030E697 /* LICENSE */,
@@ -745,7 +746,6 @@
 			children = (
 				DAEE38431E3DBEB100DD2966 /* Lodge.app */,
 				DA360DB01E3DF137005C6F6B /* LodgeTests.xctest */,
-				DA0EE7B6204657830025FC60 /* LodgeUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -753,6 +753,11 @@
 		DAEE38451E3DBEB100DD2966 /* Lodge */ = {
 			isa = PBXGroup;
 			children = (
+				619B5C83191F48CF9B1B3237 /* Performance.swift */,
+				6ED47AFE82D642A98A73DF29 /* ImageProcessingService.swift */,
+				E2720E7D27554409B94D577D /* ClipboardScheduler.swift */,
+				D54B9C6BCA48417B92C889C4 /* HistoryService.swift */,
+				7192961EA201427697E4AFA5 /* ContentProcessor.swift */,
 				2FBB7A252B5FECBB00C65BBE /* Extensions */,
 				DA68F91F28BD819E007E2F25 /* Intents */,
 				DA05B50F2C234C1C006980FE /* Models */,
@@ -796,24 +801,6 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		DA0EE7B5204657830025FC60 /* LodgeUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = DA0EE7BF204657840025FC60 /* Build configuration list for PBXNativeTarget "LodgeUITests" */;
-			buildPhases = (
-				DA0EE7B2204657830025FC60 /* Sources */,
-				DA0EE7B3204657830025FC60 /* Frameworks */,
-				DA0EE7B4204657830025FC60 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				DA0EE7BC204657840025FC60 /* PBXTargetDependency */,
-			);
-			name = LodgeUITests;
-			productName = LodgeUITests;
-			productReference = DA0EE7B6204657830025FC60 /* LodgeUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
 		DA360DAF1E3DF137005C6F6B /* LodgeTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = DA360DB71E3DF137005C6F6B /* Build configuration list for PBXNativeTarget "LodgeTests" */;
@@ -847,6 +834,7 @@
 			);
 			name = Lodge;
 			packageProductDependencies = (
+				45FC5D8B1E9E4A7390E7FB5B /* SwiftSoup */,
 				DA5154D72564102900C01004 /* Sauce */,
 				DA009946256414800030E697 /* SwiftHEXColors */,
 				DA009954256414E60030E697 /* KeyboardShortcuts */,
@@ -872,12 +860,6 @@
 				LastUpgradeCheck = 1520;
 				ORGANIZATIONNAME = p0deje;
 				TargetAttributes = {
-					DA0EE7B5204657830025FC60 = {
-						CreatedOnToolsVersion = 9.2;
-						LastSwiftMigration = 1020;
-						ProvisioningStyle = Automatic;
-						TestTargetID = DAEE38421E3DBEB100DD2966;
-					};
 					DA360DAF1E3DF137005C6F6B = {
 						CreatedOnToolsVersion = 8.2.1;
 						LastSwiftMigration = 1020;
@@ -929,6 +911,7 @@
 			);
 			mainGroup = DAEE383A1E3DBEB100DD2966;
 			packageReferences = (
+				278DE858821A4AAAB21C80BD /* XCRemoteSwiftPackageReference "SwiftSoup" */,
 				DA5154D62564102900C01004 /* XCRemoteSwiftPackageReference "Sauce" */,
 				DA009945256414800030E697 /* XCRemoteSwiftPackageReference "SwiftHEXColors" */,
 				DA009953256414E60030E697 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */,
@@ -945,19 +928,11 @@
 			targets = (
 				DAEE38421E3DBEB100DD2966 /* Lodge */,
 				DA360DAF1E3DF137005C6F6B /* LodgeTests */,
-				DA0EE7B5204657830025FC60 /* LodgeUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		DA0EE7B4204657830025FC60 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		DA360DAE1E3DF137005C6F6B /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -990,18 +965,15 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		DA0EE7B2204657830025FC60 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				DA0EE7B9204657830025FC60 /* LodgeUITests.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		DA360DAC1E3DF137005C6F6B /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				860FFAFDB4704A719D60AD16 /* MigrationTests.swift in Sources */,
+				217A66B838C44E3197938645 /* ThrottlerTests.swift in Sources */,
+				046B66002DC84C959F3C4E49 /* PerformanceTests.swift in Sources */,
+				0D5C8D3CCC5E45E78A683259 /* ImageProcessingTests.swift in Sources */,
+				5800816E584F4D06BCBD88B0 /* HistoryServiceTests.swift in Sources */,
 				DAFE2DE9268A9B1B00990986 /* HistoryItemTests.swift in Sources */,
 				DA3CE8001E44A62500B3AA98 /* ClipboardTests.swift in Sources */,
 				DA1EDE432045B35300479723 /* HistoryDecoratorTests.swift in Sources */,
@@ -1016,6 +988,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D6629085BD6F4C559C8D5ED5 /* Performance.swift in Sources */,
+				111B8F8542E9407F99D4E0F6 /* ImageProcessingService.swift in Sources */,
+				DDCC2F23C0984167B0D65097 /* ClipboardScheduler.swift in Sources */,
+				E572D8EB2EA24DB7BC2425F5 /* HistoryService.swift in Sources */,
+				158FCB7917FE421E9A654FE3 /* ContentProcessor.swift in Sources */,
 				DA19691C2C3F3EAC00258481 /* Collection+Surrounding.swift in Sources */,
 				DAA072D52C40AC52006DDFD2 /* HistoryListView.swift in Sources */,
 				DAB082962A2B7B850053E463 /* AppStoreReview.swift in Sources */,
@@ -1109,11 +1086,6 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		DA0EE7BC204657840025FC60 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = DAEE38421E3DBEB100DD2966 /* Lodge */;
-			targetProxy = DA0EE7BB204657840025FC60 /* PBXContainerItemProxy */;
-		};
 		DA360DB61E3DF137005C6F6B /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = DAEE38421E3DBEB100DD2966 /* Lodge */;
@@ -1429,60 +1401,6 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
-		DA0EE7BD204657840025FC60 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
-				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = 77768J549B;
-				GCC_C_LANGUAGE_STANDARD = gnu11;
-				INFOPLIST_FILE = LodgeUITests/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-					"@loader_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.nklmilojevic.LodgeUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = Lodge;
-			};
-			name = Debug;
-		};
-		DA0EE7BE204657840025FC60 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
-				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CODE_SIGN_IDENTITY = "Mac Developer";
-				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = 77768J549B;
-				GCC_C_LANGUAGE_STANDARD = gnu11;
-				INFOPLIST_FILE = LodgeUITests/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-					"@loader_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.nklmilojevic.LodgeUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = Lodge;
-			};
-			name = Release;
-		};
 		DA360DB81E3DF137005C6F6B /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1722,15 +1640,6 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		DA0EE7BF204657840025FC60 /* Build configuration list for PBXNativeTarget "LodgeUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				DA0EE7BD204657840025FC60 /* Debug */,
-				DA0EE7BE204657840025FC60 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
-		};
 		DA360DB71E3DF137005C6F6B /* Build configuration list for PBXNativeTarget "LodgeTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -1833,6 +1742,11 @@
 				minimumVersion = 1.4.0;
 			};
 		};
+		278DE858821A4AAAB21C80BD /* XCRemoteSwiftPackageReference "SwiftSoup" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/scinfu/SwiftSoup";
+			requirement = { kind = upToNextMinorVersion; minimumVersion = 2.13.5; };
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1880,6 +1794,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = DAC0CA3C2C88E7A4003BF498 /* XCRemoteSwiftPackageReference "fuse-swift" */;
 			productName = Fuse;
+		};
+		45FC5D8B1E9E4A7390E7FB5B /* SwiftSoup */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 278DE858821A4AAAB21C80BD /* XCRemoteSwiftPackageReference "SwiftSoup" */;
+			productName = SwiftSoup;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

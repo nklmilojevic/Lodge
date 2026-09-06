@@ -55,7 +55,8 @@ upstream updates, use [Maccy](https://github.com/p0deje/Maccy).
 
 * Lightweight and fast (inherited from Maccy)
 * Keyboard-first workflows
-* Split view mode with detailed preview panel
+* Split view with an adjustable divider, or an optional compact view
+* Full text search and a separate action to view long text
 * OCR text search in images
 * Pinned items with quick actions
 * Optional source-application icons
@@ -105,8 +106,8 @@ panel. Keyboard shortcuts are unchanged.
    <kbd>OPTION (⌥)</kbd> + <kbd>SHIFT (⇧)</kbd> + <kbd>CLICK</kbd> the item, or use
    <kbd>OPTION (⌥)</kbd> + <kbd>SHIFT (⇧)</kbd> + `n` shortcut.
 6. To delete the history item, press <kbd>OPTION (⌥)</kbd> + <kbd>DELETE (⌫)</kbd>.
-7. To see the full text of the history item, wait a couple of seconds for
-   tooltip, or use split view mode.
+7. To read an item, use the detail panel in split view. For text longer than
+   5,000 characters, select **View full text**. Search includes the full text.
 8. To pin the history item so that it remains on top of the list, press
    <kbd>OPTION (⌥)</kbd> + <kbd>P</kbd>. The item will be moved to the top with a
    random but permanent keyboard shortcut. To unpin it, press
@@ -122,6 +123,17 @@ panel. Keyboard shortcuts are unchanged.
     <kbd>OPTION (⌥)</kbd> + <kbd>SHIFT (⇧)</kbd> pressed.
 12. To customize the behavior, check the Preferences window, or press
     <kbd>COMMAND (⌘)</kbd> + <kbd>,</kbd>.
+
+In Appearance settings, enable **Compact view** to show only the history list.
+In split view, drag the divider to change the list width.
+
+Storage settings include a history data limit of 512 MB by default. This limit
+includes copied data, search text, and previews. Lodge removes the oldest
+unpinned items to stay within the limit. Pinned items are kept. A notice appears
+if pinned items exceed the limit. Database files can use additional disk space.
+
+For development, tests, and performance checks, see
+[docs/architecture.md](docs/architecture.md).
 
 ## Advanced
 

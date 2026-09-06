@@ -2,17 +2,14 @@ import SwiftData
 import SwiftUI
 
 struct PinPickerView: View {
-  @Bindable var item: HistoryItem
-  var availablePins: [String]
+  let item: HistoryItem
+  let history: History
 
   var body: some View {
     if let pin = item.pin {
-      // Ensure unique pins for ForEach
-      let uniquePins = Array(Set(availablePins + [pin])).sorted()
-      Picker("", selection: $item.pin) {
-        ForEach(uniquePins, id: \.self) { pin in
-          Text(pin)
-            .tag(pin as String?)
+      Picker("", selection: Binding(get: { item.pin }, set: { history.setPin($0, for: item) })) {
+        ForEach(Array(Set(history.availablePins + [pin])).sorted(), id: \.self) { pin in
+          Text(pin).tag(pin as String?)
         }
       }
       .controlSize(.small)
@@ -22,149 +19,90 @@ struct PinPickerView: View {
 }
 
 struct PinTitleView: View {
-  @Bindable var item: HistoryItem
+  let item: HistoryItem
+  let history: History
 
   var body: some View {
-    TextField("", text: $item.title)
+    TextField("", text: Binding(get: { item.title }, set: { history.setTitle($0, for: item) }))
   }
 }
 
 struct PinValueView: View {
-  @Bindable var item: HistoryItem
+  let item: HistoryItem
+  let history: History
   @State private var editableValue: String
-  @State private var isTextContent: Bool
-  @State private var isRichText: Bool
   @FocusState private var isEditing: Bool
-  @State private var showWarningPopover: Bool = false
 
-  init(item: HistoryItem) {
+  init(item: HistoryItem, history: History) {
     self.item = item
+    self.history = history
     self._editableValue = State(initialValue: item.previewableText)
+  }
 
-    // Check if this item has editable text content
-    let hasPlainText = item.text != nil
-    let hasImage = item.hasImageContent
-    let hasFileURLs = !item.fileURLs.isEmpty
-    // Check for the data, not the parsed result - parsing HTML invokes the WebKit
-    // importer, which fetches any remote resources synchronously on the main thread.
-    let hasRichText = item.rtfData != nil || item.htmlData != nil
-
-    // Consider it text content only if it has plain text and doesn't have images or file URLs
-    self._isTextContent = State(initialValue: hasPlainText && !hasImage && !hasFileURLs)
-    self._isRichText = State(initialValue: hasRichText && !hasImage && !hasFileURLs)
+  private var isRichText: Bool { item.rtfData != nil || item.htmlData != nil }
+  private var isEditable: Bool {
+    !item.hasImageContent && item.fileURLs.isEmpty && (item.text != nil || isRichText)
   }
 
   var body: some View {
-    Group {
-      if isTextContent || isRichText {
-        ZStack(alignment: .trailing) {
-          TextField("", text: $editableValue)
-            .focused($isEditing)
-            .onSubmit {
-              updateItemContent()
-            }
-            .onChange(of: editableValue) { _, _ in
-              updateItemContent()
-            }
-            .padding(.trailing, isRichText ? 40 : 0) // increased space for icon
-
-          if isRichText && isEditing {
-            HStack(spacing: 0) {
-              Spacer(minLength: 0)
-              Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(.orange)
-                .help(Text("RichTextEditWarning", tableName: "PinsSettings"))
-              Spacer().frame(width: 4)
-            }
-            .frame(maxHeight: .infinity, alignment: .center)
-            .padding(.trailing, 4)
-          }
+    if isEditable {
+      HStack {
+        TextField("", text: $editableValue)
+          .focused($isEditing)
+          .onSubmit { save() }
+          .onChange(of: isEditing) { _, editing in if !editing { save() } }
+        if isRichText && isEditing {
+          Image(systemName: "exclamationmark.triangle.fill")
+            .foregroundStyle(.orange)
+            .help(Text("RichTextEditWarning", tableName: "PinsSettings"))
         }
-      } else {
-        // Non-editable display for non-text content
-        Text("ContentIsNotText", tableName: "PinsSettings")
-          .foregroundStyle(.secondary)
-          .italic()
       }
+    } else {
+      Text("ContentIsNotText", tableName: "PinsSettings")
+        .foregroundStyle(.secondary)
+        .italic()
     }
   }
 
-  private func updateItemContent() {
-    // Only update if we're dealing with text or rich text content
-    guard isTextContent || isRichText else { return }
-
-    // Remove all non-plain-text content
-    let stringType = NSPasteboard.PasteboardType.string.rawValue
-    item.contents.removeAll { $0.type != stringType }
-
-    // Update or add the plain text content
-    if let index = item.contents.firstIndex(where: { $0.type == stringType }) {
-      if let data = editableValue.data(using: .utf8) {
-        item.contents[index].value = data
-      }
-    } else {
-      if let data = editableValue.data(using: .utf8) {
-        let newContent = HistoryItemContent(type: stringType, value: data)
-        item.contents.append(newContent)
-      }
-    }
-    // We don't automatically update title here since we want to preserve
-    // OCR-extracted titles for images and other non-text content
+  private func save() {
+    guard editableValue != item.previewableText else { return }
+    let text = editableValue
+    Task { await history.edit(item, text: text) }
   }
 }
 
 struct PinsSettingsPane: View {
   @Environment(AppState.self) private var appState
-  @Environment(\.modelContext) private var modelContext
-
-  @Query(filter: #Predicate<HistoryItem> { $0.pin != nil }, sort: \.firstCopiedAt)
-  private var items: [HistoryItem]
-
-  @State private var availablePins: [String] = []
   @State private var selection: PersistentIdentifier?
+  private var items: [HistoryItem] { appState.history.all.filter(\.isPinned).map(\.item) }
 
   var body: some View {
     VStack(alignment: .leading) {
       Table(items, selection: $selection) {
         TableColumn(Text("Key", tableName: "PinsSettings")) { item in
-          PinPickerView(item: item, availablePins: availablePins)
-            .onChange(of: item.pin) {
-              availablePins = HistoryItem.availablePins
-            }
+          PinPickerView(item: item, history: appState.history)
         }
         .width(60)
-
         TableColumn(Text("Alias", tableName: "PinsSettings")) { item in
-          PinTitleView(item: item)
+          PinTitleView(item: item, history: appState.history)
         }
-
         TableColumn(Text("Content", tableName: "PinsSettings")) { item in
-          PinValueView(item: item)
+          PinValueView(item: item, history: appState.history)
         }
-      }
-      .onAppear {
-        availablePins = HistoryItem.availablePins
       }
       .onDeleteCommand {
         guard let selection,
-              let item = appState.history.items.first(where: { $0.item.id == selection }) else {
-          return
-        }
-
+              let item = appState.history.all.first(where: { $0.item.id == selection }) else { return }
         appState.history.delete(item)
       }
-
+      if let error = appState.history.errorMessage {
+        Text(error).foregroundStyle(.red)
+      }
       Text("PinCustomizationDescription", tableName: "PinsSettings")
-        .foregroundStyle(.gray)
+        .foregroundStyle(.secondary)
         .controlSize(.small)
     }
     .frame(minWidth: 500, minHeight: 400)
     .padding()
   }
-}
-
-#Preview {
-  return PinsSettingsPane()
-    .environment(\.locale, .init(identifier: "en"))
-    .modelContainer(Storage.shared.container)
 }

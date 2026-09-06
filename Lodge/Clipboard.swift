@@ -6,14 +6,15 @@ import Sauce
 class Clipboard {
   static let shared = Clipboard()
 
-  typealias OnNewCopyHook = (HistoryItem) -> Void
+  typealias OnNewCopyHook = (CapturedCopy) -> Void
 
   private var onNewCopyHooks: [OnNewCopyHook] = []
   var changeCount: Int
 
-  private let pasteboard = NSPasteboard.general
+  private let pasteboard: NSPasteboard
+  private let scheduler: ClipboardScheduling
 
-  private var timer: Timer?
+  private var timer: ClipboardTimer?
 
   private let dynamicTypePrefix = "dyn."
   private let microsoftSourcePrefix = "com.microsoft.ole.source."
@@ -47,7 +48,9 @@ class Clipboard {
   private var compiledIgnoreRegexes: [String: NSRegularExpression] = [:]
   private var lastIgnoreRegexpDefaults: [String] = []
 
-  init() {
+  init(pasteboard: NSPasteboard = .general, scheduler: ClipboardScheduling? = nil) {
+    self.pasteboard = pasteboard
+    self.scheduler = scheduler ?? SystemClipboardScheduler()
     changeCount = pasteboard.changeCount
   }
 
@@ -60,19 +63,18 @@ class Clipboard {
   }
 
   func start() {
-    timer = Timer.scheduledTimer(
-      timeInterval: Defaults[.clipboardCheckInterval],
-      target: self,
-      selector: #selector(checkForChangesInPasteboard),
-      userInfo: nil,
-      repeats: true
-    )
+    stop()
+    timer = scheduler.schedule(interval: max(0.05, Defaults[.clipboardCheckInterval])) { [weak self] in
+      self?.checkForChangesInPasteboard()
+    }
   }
 
-  func restart() {
-    timer?.invalidate()
-    start()
+  func stop() {
+    timer?.cancel()
+    timer = nil
   }
+
+  func restart() { start() }
 
   @MainActor
   func copy(_ string: String) {
@@ -190,7 +192,10 @@ class Clipboard {
     // so it's better to merge all data into a single record.
     // - https://github.com/nklmilojevic/Lodge/issues/78
     // - https://github.com/nklmilojevic/Lodge/issues/472
-    var contents = [HistoryItemContent]()
+    let copiedAt = Date()
+    let copiedBy = sourceAppBundleIdentifier
+    let capturedChangeCount = changeCount
+    var contents = [ContentSnapshot]()
     var aggregateContentSize = 0
     pasteboard.pasteboardItems?.forEach({ item in
       var types = Set(item.types)
@@ -214,14 +219,14 @@ class Clipboard {
         types = types.subtracting([.microsoftLinkSource, .microsoftObjectLink, .pdf])
       }
 
-      types.forEach { type in
+      for type in types.sorted(by: { $0.rawValue < $1.rawValue }) {
         guard let data = item.data(forType: type),
               data.count <= maxContentSize,
               aggregateContentSize + data.count <= maxAggregateContentSize else {
-          return
+          continue
         }
         aggregateContentSize += data.count
-        contents.append(HistoryItemContent(type: type.rawValue, value: data))
+        contents.append(ContentSnapshot(type: type.rawValue, value: data))
       }
     })
 
@@ -229,23 +234,11 @@ class Clipboard {
       return
     }
 
-    let historyItem = HistoryItem(contents: contents)
-    historyItem.computeContentFingerprint()
-
-    if #unavailable(macOS 15.0) {
-      // On macOS 14 the history item needs to be inserted into storage directly after creating it.
-      do {
-        try History.shared.insertIntoStorage(historyItem)
-      } catch {
-        NSLog("Cannot persist clipboard item: \(error)")
-      }
-    }
-
-    historyItem.application = sourceAppBundleIdentifier
-    historyItem.title = historyItem.generateTitle()
-    historyItem.computeTextStats()
-
-    onNewCopyHooks.forEach({ $0(historyItem) })
+    // Discard a partial snapshot if another application changed the clipboard during the read.
+    guard pasteboard.changeCount == capturedChangeCount else { return }
+    let capture = CapturedCopy(contents: contents, application: copiedBy,
+                               copiedAt: copiedAt, changeCount: capturedChangeCount)
+    onNewCopyHooks.forEach { $0(capture) }
   }
 
   private func shouldIgnore(_ types: Set<NSPasteboard.PasteboardType>) -> Bool {
@@ -327,7 +320,7 @@ class Clipboard {
   // - Chrome Remote Desktop (https://github.com/nklmilojevic/Lodge/issues/948)
   // - Netbeans (https://github.com/nklmilojevic/Lodge/issues/879)
   private func sync() {
-    guard let app = sourceApp,
+    guard !AppPreferences.isTesting, let app = sourceApp,
           app.bundleURL?.lastPathComponent == "Chrome Remote Desktop.app" ||
             app.localizedName?.contains("NetBeans") == true else {
       return

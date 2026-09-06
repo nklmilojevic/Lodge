@@ -5,8 +5,9 @@ import Defaults
 // swiftlint:disable type_body_length
 @MainActor
 class ClipboardTests: XCTestCase {
-  let clipboard = Clipboard.shared
-  let pasteboard = NSPasteboard.general
+  var clipboard: Clipboard!
+  let pasteboard = NSPasteboard.withUniqueName()
+  let clock = ManualClipboardScheduler()
   let image = NSImage(named: "NSInfo")!
   let coloredString = NSAttributedString(string: "foo",
                                          attributes: [.foregroundColor: NSColor.red])
@@ -31,6 +32,7 @@ class ClipboardTests: XCTestCase {
 
   override func setUp() {
     super.setUp()
+    clipboard = Clipboard(pasteboard: pasteboard, scheduler: clock)
     Defaults[.clipboardCheckInterval] = 0.1
     Defaults[.enabledPasteboardTypes] = Set(StorageType.all.types)
     Defaults[.ignoreAllAppsExceptListed] = false
@@ -43,6 +45,7 @@ class ClipboardTests: XCTestCase {
   }
 
   override func tearDown() {
+    clipboard.stop()
     super.tearDown()
     Defaults[.enabledPasteboardTypes] = savedEnabledTypes
     Defaults[.clipboardCheckInterval] = savedClipboardCheckInterval
@@ -62,42 +65,45 @@ class ClipboardTests: XCTestCase {
 
   func testChangesListenerAndAddHooks() {
     let hookExpectation = expectation(description: "Hook is called")
-    clipboard.onNewCopy({ (_: HistoryItem) in
+    clipboard.onNewCopy({ (_: CapturedCopy) in
       hookExpectation.fulfill()
     })
     startClipboard()
     pasteboard.declareTypes([.string], owner: nil)
     pasteboard.setString("bar", forType: .string)
-    waitForExpectations(timeout: 2)
+    clock.fire()
+    waitForExpectations(timeout: 0)
   }
 
   func testIgnoreStringWithOnlySpaces() {
     let hookExpectation = expectation(description: "Hook is called")
     hookExpectation.isInverted = true
-    clipboard.onNewCopy({ (_: HistoryItem) in
+    clipboard.onNewCopy({ (_: CapturedCopy) in
       hookExpectation.fulfill()
     })
     startClipboard()
     pasteboard.declareTypes([.string], owner: nil)
     pasteboard.setString(" ", forType: .string)
-    waitForExpectations(timeout: 2)
+    clock.fire()
+    waitForExpectations(timeout: 0)
   }
 
   func testIgnoreStringWithOnlyNewlines() {
     let hookExpectation = expectation(description: "Hook is called")
     hookExpectation.isInverted = true
-    clipboard.onNewCopy({ (_: HistoryItem) in
+    clipboard.onNewCopy({ (_: CapturedCopy) in
       hookExpectation.fulfill()
     })
     startClipboard()
     pasteboard.declareTypes([.string], owner: nil)
     pasteboard.setString("\n", forType: .string)
-    waitForExpectations(timeout: 2)
+    clock.fire()
+    waitForExpectations(timeout: 0)
   }
 
   func testDoesNotIgnoreRTF() {
     let hookExpectation = expectation(description: "Hook is called")
-    clipboard.onNewCopy({ (_: HistoryItem) in
+    clipboard.onNewCopy({ (_: CapturedCopy) in
       hookExpectation.fulfill()
     })
     startClipboard()
@@ -107,18 +113,20 @@ class ClipboardTests: XCTestCase {
     )
     pasteboard.declareTypes([.rtf], owner: nil)
     pasteboard.setData(rtf, forType: .rtf)
-    waitForExpectations(timeout: 2)
+    clock.fire()
+    waitForExpectations(timeout: 0)
   }
 
   func testDoesNotIgnoreHTML() {
     let hookExpectation = expectation(description: "Hook is called")
-    clipboard.onNewCopy({ (_: HistoryItem) in
+    clipboard.onNewCopy({ (_: CapturedCopy) in
       hookExpectation.fulfill()
     })
     startClipboard()
     pasteboard.declareTypes([.html], owner: nil)
     pasteboard.setString("foo", forType: .html)
-    waitForExpectations(timeout: 2)
+    clock.fire()
+    waitForExpectations(timeout: 0)
   }
 
   func testIgnoreEventsIsEnabled() {
@@ -126,13 +134,14 @@ class ClipboardTests: XCTestCase {
 
     let hookExpectation = expectation(description: "Hook is called")
     hookExpectation.isInverted = true
-    clipboard.onNewCopy({ (_: HistoryItem) in
+    clipboard.onNewCopy({ (_: CapturedCopy) in
       hookExpectation.fulfill()
     })
     startClipboard()
     pasteboard.declareTypes([.string], owner: nil)
     pasteboard.setString("foo", forType: .string)
-    waitForExpectations(timeout: 2)
+    clock.fire()
+    waitForExpectations(timeout: 0)
   }
 
   func testIgnoreOnlyNextEventIsEnabled() {
@@ -141,13 +150,14 @@ class ClipboardTests: XCTestCase {
 
     let hookExpectation = expectation(description: "Hook is called")
     hookExpectation.isInverted = true
-    clipboard.onNewCopy({ (_: HistoryItem) in
+    clipboard.onNewCopy({ (_: CapturedCopy) in
       hookExpectation.fulfill()
     })
     startClipboard()
     pasteboard.declareTypes([.string], owner: nil)
     pasteboard.setString("foo", forType: .string)
-    waitForExpectations(timeout: 2)
+    clock.fire()
+    waitForExpectations(timeout: 0)
 
     XCTAssertFalse(Defaults[.ignoreEvents])
     XCTAssertFalse(Defaults[.ignoreOnlyNextEvent])
@@ -158,13 +168,14 @@ class ClipboardTests: XCTestCase {
 
     let hookExpectation = expectation(description: "Hook is called")
     hookExpectation.isInverted = true
-    clipboard.onNewCopy({ (_: HistoryItem) in
+    clipboard.onNewCopy({ (_: CapturedCopy) in
       hookExpectation.fulfill()
     })
     startClipboard()
     pasteboard.declareTypes([.string], owner: nil)
     pasteboard.setString("bar", forType: .string)
-    waitForExpectations(timeout: 2)
+    clock.fire()
+    waitForExpectations(timeout: 0)
   }
 
   func testIgnoreAllApplicationsExcept() {
@@ -172,25 +183,27 @@ class ClipboardTests: XCTestCase {
     Defaults[.ignoredApps] = ["com.apple.dt.Xcode", "com.apple.finder"] // Finder is on Bitrise
 
     let hookExpectation = expectation(description: "Hook is called")
-    clipboard.onNewCopy({ (_: HistoryItem) in
+    clipboard.onNewCopy({ (_: CapturedCopy) in
       hookExpectation.fulfill()
     })
     startClipboard()
     pasteboard.declareTypes([.string], owner: nil)
     pasteboard.setString("bar", forType: .string)
-    waitForExpectations(timeout: 2)
+    clock.fire()
+    waitForExpectations(timeout: 0)
   }
 
   func testIgnoreTransientTypes() {
     let hookExpectation = expectation(description: "Hook is called")
     hookExpectation.isInverted = true
-    clipboard.onNewCopy({ (_: HistoryItem) in
+    clipboard.onNewCopy({ (_: CapturedCopy) in
       hookExpectation.fulfill()
     })
     startClipboard()
     pasteboard.declareTypes([.string, transientType], owner: nil)
     pasteboard.setString("bar", forType: .string)
-    waitForExpectations(timeout: 2)
+    clock.fire()
+    waitForExpectations(timeout: 0)
   }
 
   func testIgnoreCustomTypes() {
@@ -198,25 +211,27 @@ class ClipboardTests: XCTestCase {
 
     let hookExpectation = expectation(description: "Hook is called")
     hookExpectation.isInverted = true
-    clipboard.onNewCopy({ (_: HistoryItem) in
+    clipboard.onNewCopy({ (_: CapturedCopy) in
       hookExpectation.fulfill()
     })
     startClipboard()
     pasteboard.declareTypes([.string, customType], owner: nil)
     pasteboard.setString("bar", forType: .string)
-    waitForExpectations(timeout: 2)
+    clock.fire()
+    waitForExpectations(timeout: 0)
   }
 
   func testIgnoreCopiesWithUnknownTypes() {
     let hookExpectation = expectation(description: "Hook is called")
     hookExpectation.isInverted = true
-    clipboard.onNewCopy({ (_: HistoryItem) in
+    clipboard.onNewCopy({ (_: CapturedCopy) in
       hookExpectation.fulfill()
     })
     startClipboard()
     pasteboard.declareTypes([unknownType], owner: nil)
     pasteboard.setString(" ", forType: unknownType)
-    waitForExpectations(timeout: 2)
+    clock.fire()
+    waitForExpectations(timeout: 0)
   }
 
   @MainActor
@@ -263,19 +278,20 @@ class ClipboardTests: XCTestCase {
   func testHandlesItemsWithoutData() {
     let hookExpectation = expectation(description: "Hook is called")
     pasteboard.clearContents()
-    clipboard.onNewCopy({ (_: HistoryItem) in
+    clipboard.onNewCopy({ (_: CapturedCopy) in
       hookExpectation.fulfill()
     })
     startClipboard()
     pasteboard.declareTypes([.fileURL, .string], owner: nil)
     // fileURL is left without data
     pasteboard.setString("bar", forType: .string)
-    waitForExpectations(timeout: 2)
+    clock.fire()
+    waitForExpectations(timeout: 0)
   }
 
   func testMergesMultipleItems() {
     let hookExpectation = expectation(description: "Hook is called")
-    clipboard.onNewCopy({ (item: HistoryItem) in
+    clipboard.onNewCopy({ (item: CapturedCopy) in
       XCTAssertEqual(
         Set(item.contents.map({ $0.type })),
         Set([self.tiffType.rawValue, self.stringType.rawValue])
@@ -292,14 +308,15 @@ class ClipboardTests: XCTestCase {
     pasteboard.clearContents()
     pasteboard.writeObjects([item1, item2])
 
-    waitForExpectations(timeout: 2)
+    clock.fire()
+    waitForExpectations(timeout: 0)
   }
 
   func testRemovesDisabledTypes() {
     Defaults[.enabledPasteboardTypes] = [.fileURL]
 
     let hookExpectation = expectation(description: "Hook is called")
-    clipboard.onNewCopy({ (item: HistoryItem) in
+    clipboard.onNewCopy({ (item: CapturedCopy) in
       XCTAssertEqual(item.contents.map({ $0.type }), [self.fileURLType.rawValue])
       hookExpectation.fulfill()
     })
@@ -313,12 +330,13 @@ class ClipboardTests: XCTestCase {
     pasteboard.clearContents()
     pasteboard.writeObjects([item])
 
-    waitForExpectations(timeout: 2)
+    clock.fire()
+    waitForExpectations(timeout: 0)
   }
 
   func testRemovesDynamicTypes() {
     let hookExpectation = expectation(description: "Hook is called")
-    clipboard.onNewCopy({ (item: HistoryItem) in
+    clipboard.onNewCopy({ (item: CapturedCopy) in
       XCTAssertEqual(item.contents.map({ $0.type }), [self.stringType.rawValue])
       hookExpectation.fulfill()
     })
@@ -331,7 +349,32 @@ class ClipboardTests: XCTestCase {
     pasteboard.clearContents()
     pasteboard.writeObjects([item])
 
-    waitForExpectations(timeout: 2)
+    clock.fire()
+    waitForExpectations(timeout: 0)
   }
 }
 // swiftlint:enable type_body_length
+
+@MainActor
+final class ManualClipboardScheduler: ClipboardScheduling {
+  private final class Token: ClipboardTimer {
+    var cancelled = false
+    func cancel() { cancelled = true }
+  }
+  private var action: (@MainActor () -> Void)?
+  private var token: Token?
+  private(set) var schedules = 0
+
+  func schedule(interval: TimeInterval, action: @escaping @MainActor () -> Void) -> ClipboardTimer {
+    schedules += 1
+    self.action = action
+    let token = Token()
+    self.token = token
+    return token
+  }
+
+  func fire() {
+    guard token?.cancelled == false else { return }
+    action?()
+  }
+}
