@@ -4,6 +4,11 @@ import SwiftData
 @Model
 class HistoryItemContent {
   var type: String = ""
+  var fingerprint: String = ""
+
+  var contentDigest: String {
+    fingerprint.isEmpty ? ContentProcessor.fingerprint(ContentSnapshot(type: type, value: value)) : fingerprint
+  }
   @Attribute(.externalStorage) var value: Data?
 
   @Relationship

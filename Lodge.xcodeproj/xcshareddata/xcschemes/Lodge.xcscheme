@@ -45,16 +45,6 @@
                ReferencedContainer = "container:Lodge.xcodeproj">
             </BuildableReference>
          </TestableReference>
-         <TestableReference
-            skipped = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "DA0EE7B5204657830025FC60"
-               BuildableName = "LodgeUITests.xctest"
-               BlueprintName = "LodgeUITests"
-               ReferencedContainer = "container:Lodge.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

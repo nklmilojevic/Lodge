@@ -56,11 +56,19 @@ struct StorageSettingsPane: View {
     }
   }
 
+  @Default(.historyDataLimitMB) private var dataLimitMB
   @Default(.size) private var size
   @Default(.sortBy) private var sortBy
 
   @State private var viewModel = ViewModel()
-  @State private var storageSize = Storage.shared.size
+  @State private var storageSize = ""
+
+  private let dataLimitFormatter: NumberFormatter = {
+    let formatter = NumberFormatter()
+    formatter.minimum = 1
+    formatter.maximum = 16_384
+    return formatter
+  }()
 
   private let sizeFormatter: NumberFormatter = {
     let formatter = NumberFormatter()
@@ -103,15 +111,24 @@ struct StorageSettingsPane: View {
             .controlSize(.small)
             .foregroundStyle(.gray)
             .help(Text("CurrentSizeTooltip", tableName: "StorageSettings"))
-            .onAppear {
-              storageSize = Storage.shared.size
-            }
+            .task { storageSize = await Storage.shared.formattedSize() }
         }
         if let loadError = Storage.shared.loadError {
           Text("Lodge could not open the persistent history and is using temporary storage. \(loadError)")
             .foregroundStyle(.red)
             .fixedSize(horizontal: false, vertical: true)
         }
+      }
+
+      Settings.Section(label: { Text("History data limit") }) {
+        HStack {
+          TextField("MB", value: $dataLimitMB, formatter: dataLimitFormatter)
+            .frame(width: 80)
+          Stepper("MB", value: $dataLimitMB, in: 1...16_384, step: 16)
+        }
+        Text("The limit includes copied data and search text. Pinned items are kept. Database files can use extra space.")
+          .font(.callout)
+          .foregroundStyle(.secondary)
       }
 
       Settings.Section(label: { Text("SortBy", tableName: "StorageSettings") }) {

@@ -25,6 +25,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   private var statusItemVisibilityObserver: NSKeyValueObservation?
 
   func applicationWillFinishLaunching(_ notification: Notification) { // swiftlint:disable:this function_body_length
+    guard !AppPreferences.isTesting else { return }
     #if DEBUG
     if CommandLine.arguments.contains("enable-testing") {
       SPUUpdater(hostBundle: Bundle.main,
@@ -38,12 +39,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Bridge FloatingPanel via AppDelegate.
     AppState.shared.appDelegate = self
 
-    Clipboard.shared.onNewCopy { History.shared.add($0) }
-    Clipboard.shared.start()
+    Clipboard.shared.onNewCopy { AppState.shared.history.receive($0) }
+    AppState.shared.history.onReady = { Clipboard.shared.start() }
+    Task {
+      do { try await AppState.shared.history.load() }
+      catch { }
+    }
 
     Task {
       for await _ in Defaults.updates(.clipboardCheckInterval, initial: false) {
-        Clipboard.shared.restart()
+        if AppState.shared.history.isLoaded { Clipboard.shared.restart() }
       }
     }
 
@@ -90,6 +95,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationDidFinishLaunching(_ aNotification: Notification) {
+    guard !AppPreferences.isTesting else { return }
     migrateUserDefaults()
     disableUnusedGlobalHotkeys()
 
@@ -109,6 +115,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationWillTerminate(_ notification: Notification) {
+    guard !AppPreferences.isTesting else { return }
+    Clipboard.shared.stop()
+    AppState.shared.history.stop()
     if Defaults[.clearOnQuit] {
       AppState.shared.history.clear()
     }

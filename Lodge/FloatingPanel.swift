@@ -8,6 +8,10 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
   var statusBarButton: NSStatusBarButton?
   let onClose: () -> Void
   private var isProgrammaticResize = false
+  private var layoutIsCompact = Defaults[.compactView]
+  private var savedSize: NSSize {
+    layoutIsCompact ? Defaults[.compactWindowSize] : Defaults[.windowSize]
+  }
 
   override var isMovable: Bool {
     get { Defaults[.popupPosition] != .statusItem }
@@ -64,6 +68,25 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
 
   }
 
+  func applyLayout() {
+    let compact = Defaults[.compactView]
+    if compact != layoutIsCompact {
+      saveWindowFrame(frame: frame)
+      layoutIsCompact = compact
+    }
+    contentMinSize = NSSize(width: compact ? 280 : 540, height: 220)
+    var size = savedSize
+    size.width = max(size.width, contentMinSize.width)
+    size.height = max(size.height, contentMinSize.height)
+    if let screen = screen ?? NSScreen.forPopup {
+      size.width = min(size.width, screen.visibleFrame.width)
+      size.height = min(size.height, screen.visibleFrame.height)
+    }
+    isProgrammaticResize = true
+    setContentSize(size)
+    isProgrammaticResize = false
+  }
+
   func toggle(height: CGFloat, at popupPosition: PopupPosition = Defaults[.popupPosition]) {
     if isPresented {
       close()
@@ -73,7 +96,10 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
   }
 
   func open(height: CGFloat, at popupPosition: PopupPosition = Defaults[.popupPosition]) {
-    let savedSize = Defaults[.windowSize]
+    let interval = AppPerformance.signposter.beginInterval("Open popup")
+    defer { AppPerformance.signposter.endInterval("Open popup", interval) }
+    applyLayout()
+    let savedSize = self.savedSize
     // Use saved height if passed height is 0 (first open before content is measured)
     let targetHeight = height > 0 ? min(height, savedSize.height) : savedSize.height
     setContentSize(NSSize(width: savedSize.width, height: targetHeight))
@@ -90,7 +116,7 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
   }
 
   func verticallyResize(to newHeight: CGFloat) {
-    var newSize = Defaults[.windowSize]
+    var newSize = savedSize
     newSize.height = min(newHeight, newSize.height)
 
     var newOrigin = frame.origin
@@ -116,7 +142,8 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
   }
 
   func saveWindowFrame(frame: NSRect) {
-    Defaults[.windowSize] = frame.size
+    if layoutIsCompact { Defaults[.compactWindowSize] = frame.size }
+    else { Defaults[.windowSize] = frame.size }
     saveWindowPosition()
   }
 
@@ -147,7 +174,7 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
   override func resignKey() {
     super.resignKey()
     // Don't hide if confirmation is shown.
-    if NSApp.alertWindow == nil {
+    if NSApp.alertWindow == nil && attachedSheet == nil {
       close()
     }
   }

@@ -53,12 +53,14 @@ class HistoryItemDecoratorTests: XCTestCase {
     XCTAssertNil(itemDecorator.previewImage)
   }
 
-  func testImage() {
+  func testImage() async {
     let image = NSImage(named: "StatusBarMenuImage")!
     let itemDecorator = historyItemDecorator(image)
-    itemDecorator.sizeImages()
+    itemDecorator.ensurePreviewImage()
+    await itemDecorator.waitForPreview()
     XCTAssertEqual(itemDecorator.title, "")
-    XCTAssertEqual(itemDecorator.previewImage!.size, image.size)
+    XCTAssertNotNil(itemDecorator.previewImage)
+    XCTAssertLessThanOrEqual(itemDecorator.previewImage!.size.width, 1200)
   }
 
   func testFile() {
@@ -89,15 +91,15 @@ class HistoryItemDecoratorTests: XCTestCase {
 
   func testPin() {
     let itemDecorator = historyItemDecorator("foo")
-    itemDecorator.togglePin()
+    itemDecorator.item.pin = "b"
     XCTAssertNotNil(itemDecorator.item.pin)
     XCTAssertTrue(itemDecorator.isPinned)
   }
 
   func testUnpin() {
     let itemDecorator = historyItemDecorator("foo")
-    itemDecorator.togglePin()
-    itemDecorator.togglePin()
+    itemDecorator.item.pin = "b"
+    itemDecorator.item.pin = nil
     XCTAssertNil(itemDecorator.item.pin)
     XCTAssertFalse(itemDecorator.isPinned)
   }

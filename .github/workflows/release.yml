@@ -26,6 +26,14 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
 
+      - name: Run unit tests
+        run: >-
+          xcodebuild -quiet -project Lodge.xcodeproj -scheme Lodge
+          -configuration Debug -destination 'platform=macOS'
+          -derivedDataPath "$RUNNER_TEMP/LodgeTests"
+          -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile
+          CODE_SIGNING_ALLOWED=NO test
+
       - name: Commit and tag release version
         if: github.event_name == 'workflow_dispatch'
         env:

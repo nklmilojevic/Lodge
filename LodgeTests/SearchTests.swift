@@ -4,7 +4,7 @@ import Defaults
 
 class SearchTests: XCTestCase {
   let savedSearchMode = Defaults[.searchMode]
-  var items: [Search.Searchable]!
+  var items: [HistoryItemDecorator]!
 
   override func tearDown() {
     super.tearDown()
@@ -231,6 +231,16 @@ class SearchTests: XCTestCase {
     ])
     XCTAssertEqual(search("fbb"), [])
     XCTAssertEqual(search("m"), [])
+  }
+
+  func testCaseAndCanonicalUnicodeMatchInLongText() {
+    let documents = [SearchDocument(id: UUID(), title: "Title", text: String(repeating: "x", count: 6_000) + " CAFE\u{301}", ocr: "")]
+    XCTAssertEqual(SearchEngine.search(query: "café", documents: documents, mode: "exact", ocr: false).count, 1)
+  }
+
+  func testFuzzySearchIncludesTextAfterTheFirstSection() {
+    let documents = [SearchDocument(id: UUID(), title: "Title", text: String(repeating: "x", count: 12_000) + " zebra", ocr: "")]
+    XCTAssertEqual(SearchEngine.search(query: "zebra", documents: documents, mode: "fuzzy", ocr: false).count, 1)
   }
 
   @MainActor
