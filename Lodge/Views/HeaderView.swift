@@ -17,8 +17,7 @@ struct HeaderView: View {
           .foregroundStyle(.secondary)
       }
 
-      SearchFieldView(placeholder: "search_placeholder", query: $searchQuery)
-        .focused($searchFocused)
+      SearchFieldView(placeholder: "search_placeholder", query: $searchQuery, searchFocused: $searchFocused)
         .frame(maxWidth: .infinity)
         .onChange(of: scenePhase) {
           if scenePhase == .background && !searchQuery.isEmpty {
@@ -28,12 +27,11 @@ struct HeaderView: View {
         // Only reliable way to disable the cursor. allowsHitTesting() does not work
         .offset(y: appState.searchVisible ? 0 : -Popup.itemHeight)
     }
-    .frame(height: appState.searchVisible ? Popup.itemHeight + 3 : 0)
+    .frame(height: appState.searchVisible ? 28 : 0)
     .opacity(appState.searchVisible ? 1 : 0)
-    .padding(.horizontal, 10)
-    // 2px is needed to prevent items from showing behind top pinned items during scrolling
-    // https://github.com/nklmilojevic/Lodge/issues/832
-    .padding(.bottom, appState.searchVisible ? 5 : 2)
+    .padding(.horizontal, 12)
+    .padding(.vertical, appState.searchVisible ? 12 : 0)
+    .clipped()
     .background {
       GeometryReader { geo in
         Color.clear

@@ -1,5 +1,16 @@
 import SwiftUI
 
+extension View {
+  @ViewBuilder
+  func popupCorners(minimumRadius: CGFloat) -> some View {
+    if #available(macOS 26.0, *) {
+      clipShape(ConcentricRectangle(corners: .concentric(minimum: .fixed(minimumRadius))))
+    } else {
+      clipShape(.rect(cornerRadius: minimumRadius))
+    }
+  }
+}
+
 struct VisualEffectView: NSViewRepresentable {
   let visualEffectView = NSVisualEffectView()
 

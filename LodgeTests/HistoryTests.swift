@@ -1,6 +1,7 @@
 import XCTest
 import Defaults
 import SwiftData
+import SwiftUI
 @testable import Lodge
 
 @MainActor
@@ -206,6 +207,63 @@ final class HistoryTests: XCTestCase {
     XCTAssertEqual(history.items, [item])
     XCTAssertEqual(item.item.pin, pin)
     XCTAssertTrue(history.errorMessage?.contains("history limit") == true)
+  }
+
+  func testNativeSearchNavigationDoesNotAcceptAnItem() throws {
+    let first = try add("first")
+    let second = try add("second")
+    let state = AppState(history: history)
+    defer { state.popup.deinitEventsMonitor() }
+    state.selection = second.id
+    var accepted: UUID?
+    history.onSelect = { accepted = $0.id }
+    let handler = HistoryKeyHandler(appState: state, searchQuery: .constant(""), focusSearch: {})
+
+    XCTAssertTrue(handler.handle(try keyboardEvent(keyCode: 125, character: NSDownArrowFunctionKey)))
+    XCTAssertEqual(history.selectedItem?.id, first.id)
+    XCTAssertNil(accepted)
+    XCTAssertTrue(handler.handle(try keyboardEvent(keyCode: 126, character: NSUpArrowFunctionKey)))
+    XCTAssertEqual(history.selectedItem?.id, second.id)
+    XCTAssertNil(accepted)
+
+    XCTAssertTrue(handler.handle(try keyboardEvent(keyCode: 36, character: 13)))
+    XCTAssertEqual(accepted, second.id)
+  }
+
+  func testNativeSearchLeavesTextEntryToTheField() throws {
+    let state = AppState(history: history)
+    defer { state.popup.deinitEventsMonitor() }
+    let handler = HistoryKeyHandler(appState: state, searchQuery: .constant(""), focusSearch: {})
+    XCTAssertFalse(handler.handle(try keyboardEvent(keyCode: 0, character: 97)))
+    XCTAssertFalse(handler.handle(try keyboardEvent(keyCode: 123, character: NSLeftArrowFunctionKey)))
+  }
+
+  func testNativeSplitRestoresAndSavesColumnWidth() async throws {
+    let previousWidth = Defaults[.listWidth]
+    defer { Defaults[.listWidth] = previousWidth }
+    Defaults[.listWidth] = 300
+    let controller = HistorySplitController(sidebar: Text("History"), detail: Text("Preview"))
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 460),
+                          styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+    window.contentViewController = controller
+    window.setContentSize(NSSize(width: 760, height: 460))
+    controller.view.layoutSubtreeIfNeeded()
+    controller.viewDidLayout()
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertEqual(controller.sidebarController.view.frame.width, 300, accuracy: 1)
+    controller.splitView.setPosition(350, ofDividerAt: 0)
+    controller.view.layoutSubtreeIfNeeded()
+    XCTAssertEqual(controller.sidebarController.view.frame.width, 350, accuracy: 1)
+    XCTAssertEqual(Defaults[.listWidth], 350, accuracy: 1)
+    XCTAssertFalse(controller.splitViewItems[0].canCollapse)
+    XCTAssertGreaterThanOrEqual(controller.detailController.view.frame.width, 260)
+  }
+
+  private func keyboardEvent(keyCode: UInt16, character: Int) throws -> NSEvent {
+    let text = String(try XCTUnwrap(UnicodeScalar(character)))
+    return try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                                       timestamp: 0, windowNumber: 0, context: nil, characters: text,
+                                       charactersIgnoringModifiers: text, isARepeat: false, keyCode: keyCode))
   }
 
   private func add(_ text: String, changeCount: Int = 0, title: String? = nil) throws -> HistoryItemDecorator {
