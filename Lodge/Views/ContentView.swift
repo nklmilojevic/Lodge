@@ -190,7 +190,8 @@ final class HistorySplitController<Sidebar: View, Detail: View>: NSSplitViewCont
 
   override func splitViewDidResizeSubviews(_ notification: Notification) {
     super.splitViewDidResizeSubviews(notification)
-    guard hasRestoredWidth else { return }
-    Defaults[.listWidth] = sidebarController.view.frame.width
+    guard hasRestoredWidth, let sidebarPane = splitView.arrangedSubviews.first else { return }
+    // The hosted sidebar can be inset inside the pane, as it is on macOS 26.
+    Defaults[.listWidth] = sidebarPane.frame.width
   }
 }

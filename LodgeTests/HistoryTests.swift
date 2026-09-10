@@ -250,13 +250,23 @@ final class HistoryTests: XCTestCase {
     controller.view.layoutSubtreeIfNeeded()
     controller.viewDidLayout()
     try await Task.sleep(for: .milliseconds(100))
-    XCTAssertEqual(controller.sidebarController.view.frame.width, 300, accuracy: 1)
+    let sidebarPane = try XCTUnwrap(controller.splitView.arrangedSubviews.first)
+    XCTAssertEqual(sidebarPane.frame.width, 300, accuracy: 1)
     controller.splitView.setPosition(350, ofDividerAt: 0)
     controller.view.layoutSubtreeIfNeeded()
-    XCTAssertEqual(controller.sidebarController.view.frame.width, 350, accuracy: 1)
+    XCTAssertEqual(sidebarPane.frame.width, 350, accuracy: 1)
     XCTAssertEqual(Defaults[.listWidth], 350, accuracy: 1)
     XCTAssertFalse(controller.splitViewItems[0].canCollapse)
     XCTAssertGreaterThanOrEqual(controller.detailController.view.frame.width, 260)
+
+    let reopened = HistorySplitController(sidebar: Text("History"), detail: Text("Preview"))
+    window.contentViewController = reopened
+    window.setContentSize(NSSize(width: 760, height: 460))
+    reopened.view.layoutSubtreeIfNeeded()
+    reopened.viewDidLayout()
+    try await Task.sleep(for: .milliseconds(100))
+    let restoredPane = try XCTUnwrap(reopened.splitView.arrangedSubviews.first)
+    XCTAssertEqual(restoredPane.frame.width, 350, accuracy: 1)
   }
 
   private func keyboardEvent(keyCode: UInt16, character: Int) throws -> NSEvent {
