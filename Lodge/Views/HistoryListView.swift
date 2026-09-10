@@ -8,94 +8,68 @@ struct HistoryListView: View {
   @Environment(AppState.self) private var appState
   @Environment(ModifierFlags.self) private var modifierFlags
   @Environment(\.scenePhase) private var scenePhase
-
   @Default(.pinTo) private var pinTo
+  @Default(.popupFontSize) private var fontSize
 
-  // Use pre-filtered arrays from History to avoid repeated filtering
-  private var pinnedItems: [HistoryItemDecorator] {
-    appState.history.visiblePinnedItems
-  }
-  private var unpinnedItems: [HistoryItemDecorator] {
-    appState.history.visibleUnpinnedItems
-  }
-  private var showPinsSeparator: Bool {
-    !pinnedItems.isEmpty && !unpinnedItems.isEmpty && appState.history.searchQuery.isEmpty
-  }
+  private var pinnedItems: [HistoryItemDecorator] { appState.history.visiblePinnedItems }
+  private var unpinnedItems: [HistoryItemDecorator] { appState.history.visibleUnpinnedItems }
+  private var rowHeight: CGFloat { max(28, CGFloat(fontSize) + 12) }
 
   var body: some View {
-    if pinTo == .top {
-      LazyVStack(spacing: 0) {
-        ForEach(pinnedItems) { item in
-          HistoryItemView(item: item)
-        }
-
-        if showPinsSeparator {
-          Divider()
-            .padding(.horizontal, 10)
-            .padding(.vertical, 3)
+    GeometryReader { geometry in
+      let pinnedHeight = min(CGFloat(pinnedItems.count) * rowHeight + 16, geometry.size.height * 0.4)
+      VStack(spacing: 0) {
+        if pinnedItems.isEmpty {
+          historyList(unpinnedItems)
+        } else if unpinnedItems.isEmpty {
+          historyList(pinnedItems)
+        } else {
+          if pinTo == .top {
+            historyList(pinnedItems).frame(height: pinnedHeight)
+            Divider()
+          }
+          historyList(unpinnedItems)
+          if pinTo == .bottom {
+            Divider()
+            historyList(pinnedItems).frame(height: pinnedHeight)
+          }
         }
       }
-      .background {
-        GeometryReader { geo in
-          Color.clear
-            .task(id: geo.size.height) {
-              appState.popup.pinnedItemsHeight = geo.size.height
-            }
-        }
+      .task(id: pinnedHeight) {
+        appState.popup.pinnedItemsHeight = pinnedItems.isEmpty ? 0 : pinnedHeight
       }
     }
-
-    ScrollView {
-      ScrollViewReader { proxy in
-        LazyVStack(spacing: 0) {
-          ForEach(unpinnedItems) { item in
-            HistoryItemView(item: item)
-          }
-        }
-        .task(id: appState.scrollTarget) {
-          guard appState.scrollTarget != nil else { return }
-
-          try? await Task.sleep(for: .milliseconds(10))
-          guard !Task.isCancelled else { return }
-
-          if let selection = appState.scrollTarget {
-            proxy.scrollTo(selection)
-            appState.scrollTarget = nil
-          }
-        }
-        .onChange(of: scenePhase) {
-          if scenePhase == .active {
-            searchFocused = true
-            appState.isKeyboardNavigating = true
-            appState.selection = appState.history.unpinnedItems.first?.id ?? appState.history.pinnedItems.first?.id
-          } else {
-            modifierFlags.flags = []
-            appState.isKeyboardNavigating = true
-          }
-        }
+    .onChange(of: scenePhase) {
+      if scenePhase == .active {
+        searchFocused = true
+        appState.isKeyboardNavigating = true
+        appState.selection = appState.history.unpinnedItems.first?.id ?? appState.history.pinnedItems.first?.id
+      } else {
+        modifierFlags.flags = []
+        appState.isKeyboardNavigating = true
       }
-      .contentMargins(.leading, 10, for: .scrollIndicators)
     }
+  }
 
-    if pinTo == .bottom {
-      LazyVStack(spacing: 0) {
-        if showPinsSeparator {
-          Divider()
-            .padding(.horizontal, 10)
-            .padding(.vertical, 3)
-        }
-
-        ForEach(pinnedItems) { item in
+  private func historyList(_ items: [HistoryItemDecorator]) -> some View {
+    ScrollViewReader { proxy in
+      List(selection: Binding<UUID?>(
+        get: { appState.history.selectedItem?.id },
+        set: { if let id = $0 { appState.selection = id } }
+      )) {
+        ForEach(items) { item in
           HistoryItemView(item: item)
+            .tag(item.id)
         }
       }
-      .background {
-        GeometryReader { geo in
-          Color.clear
-            .task(id: geo.size.height) {
-              appState.popup.pinnedItemsHeight = geo.size.height
-            }
-        }
+      .listStyle(.sidebar)
+      .environment(\.defaultMinListRowHeight, rowHeight)
+      .task(id: appState.scrollTarget) {
+        guard let selection = appState.scrollTarget, items.contains(where: { $0.id == selection }) else { return }
+        await Task.yield()
+        guard !Task.isCancelled else { return }
+        proxy.scrollTo(selection)
+        if appState.scrollTarget == selection { appState.scrollTarget = nil }
       }
     }
   }

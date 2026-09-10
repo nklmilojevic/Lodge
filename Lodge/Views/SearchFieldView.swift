@@ -1,53 +1,93 @@
 import SwiftUI
 
-struct SearchFieldView: View {
-  var placeholder: LocalizedStringKey
+struct SearchFieldView: NSViewRepresentable {
+  var placeholder: String
   @Binding var query: String
-
+  @FocusState.Binding var searchFocused: Bool
   @Environment(AppState.self) private var appState
 
-  var body: some View {
-    ZStack {
-      RoundedRectangle(cornerRadius: 5, style: .continuous)
-        .fill(Color.secondary)
-        .opacity(0.1)
-        .frame(height: 23)
+  func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-      HStack {
-        Image(systemName: "magnifyingglass")
-          .frame(width: 11, height: 11)
-          .padding(.leading, 5)
-          .opacity(0.8)
+  func makeNSView(context: Context) -> HistorySearchField {
+    let field = HistorySearchField()
+    field.placeholderString = NSLocalizedString(placeholder, comment: "")
+    field.sendsSearchStringImmediately = true
+    field.sendsWholeSearchString = false
+    field.delegate = context.coordinator
+    field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    field.onKeyEvent = { [weak coordinator = context.coordinator] event in
+      coordinator?.handle(event) ?? false
+    }
+    field.onAttach = { [weak coordinator = context.coordinator, weak field] in
+      guard let field else { return }
+      coordinator?.updateFocus(field)
+    }
+    return field
+  }
 
-        TextField(placeholder, text: $query)
-          .disableAutocorrection(true)
-          .lineLimit(1)
-          .textFieldStyle(.plain)
-          .onSubmit {
-            appState.select()
-          }
+  func updateNSView(_ field: HistorySearchField, context: Context) {
+    context.coordinator.parent = self
+    if field.stringValue != query, (field.currentEditor() as? NSTextView)?.hasMarkedText() != true {
+      field.stringValue = query
+    }
+    context.coordinator.updateFocus(field)
+  }
 
-        if !query.isEmpty {
-          Button {
-            query = ""
-          } label: {
-            Image(systemName: "xmark.circle.fill")
-              .frame(width: 11, height: 11)
-              .padding(.trailing, 5)
-          }
-          .buttonStyle(PlainButtonStyle())
-          .opacity(query.isEmpty ? 0 : 0.9)
-        }
+  @MainActor
+  final class Coordinator: NSObject, NSSearchFieldDelegate {
+    var parent: SearchFieldView
+    init(_ parent: SearchFieldView) { self.parent = parent }
+
+    func controlTextDidChange(_ notification: Notification) {
+      guard let field = notification.object as? NSSearchField else { return }
+      parent.query = field.stringValue
+    }
+
+    func controlTextDidBeginEditing(_ notification: Notification) {
+      parent.searchFocused = true
+    }
+
+    func controlTextDidEndEditing(_ notification: Notification) {
+      parent.searchFocused = false
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+      guard !textView.hasMarkedText(), let event = NSApp.currentEvent else { return false }
+      return handle(event)
+    }
+
+    func handle(_ event: NSEvent) -> Bool {
+      HistoryKeyHandler(appState: parent.appState, searchQuery: parent.$query) {
+        self.parent.searchFocused = true
+      }.handle(event)
+    }
+
+    func updateFocus(_ field: NSSearchField) {
+      guard parent.searchFocused, let window = field.window, window.isKeyWindow,
+            field.currentEditor() !== window.firstResponder else { return }
+      DispatchQueue.main.async { [weak self, weak field] in
+        guard let self, self.parent.searchFocused, let field,
+              let window = field.window, window.isKeyWindow else { return }
+        window.makeFirstResponder(field)
       }
     }
   }
 }
 
-#Preview {
-  return List {
-    SearchFieldView(placeholder: "search_placeholder", query: .constant(""))
-    SearchFieldView(placeholder: "search_placeholder", query: .constant("search"))
+final class HistorySearchField: NSSearchField {
+  var onKeyEvent: ((NSEvent) -> Bool)?
+  var onAttach: (() -> Void)?
+
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    onAttach?()
   }
-  .frame(width: 300)
-  .environment(\.locale, .init(identifier: "en"))
+
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    if let editor = currentEditor() as? NSTextView, window?.firstResponder === editor,
+       !editor.hasMarkedText(), onKeyEvent?(event) == true {
+      return true
+    }
+    return super.performKeyEquivalent(with: event)
+  }
 }
