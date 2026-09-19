@@ -208,6 +208,11 @@ class HistoryItem {
       .compactMap { URL(dataRepresentation: $0, relativeTo: nil, isAbsolute: true) }
   }
 
+  var linkSnapshots: [ContentSnapshot] {
+    let types = [NSPasteboard.PasteboardType.html.rawValue, NSPasteboard.PasteboardType.rtf.rawValue]
+    return contents.filter { types.contains($0.type) }.map { ContentSnapshot(type: $0.type, value: $0.value) }
+  }
+
   var htmlData: Data? { contentData([.html]) }
   var html: NSAttributedString? {
     guard let data = htmlData else { return nil }

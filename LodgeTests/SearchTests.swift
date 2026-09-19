@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 import Defaults
 @testable import Lodge
@@ -60,6 +61,30 @@ class SearchTests: XCTestCase {
     XCTAssertFalse(plan.matches(document, ocr: false))
     document.text = "https://example.org and https://github.com/org/repo"
     XCTAssertTrue(plan.matches(document, ocr: false))
+  }
+
+  func testAskLinksFindHyperlinkDestinationsInRichContent() throws {
+    let html = "<p>See <a href=\"https://github.com/org/repo\">the repository</a> today.</p>"
+    var document = AskSearchDocument(id: UUID(), text: "See the repository today.", linkContents: [
+      ContentSnapshot(type: NSPasteboard.PasteboardType.html.rawValue, value: Data(html.utf8))
+    ])
+    XCTAssertTrue(AskSearchPlan(kind: .link).matches(document, ocr: false))
+    XCTAssertTrue(AskSearchPlan(kind: .link, domain: "github.com").matches(document, ocr: false))
+    XCTAssertTrue(AskSearchPlan(terms: ["repository"], kind: .link, domain: "github.com").matches(document, ocr: false))
+    XCTAssertFalse(AskSearchPlan(kind: .link, domain: "gitlab.com").matches(document, ocr: false))
+
+    let link = try XCTUnwrap(URL(string: "https://github.com/org/repo"))
+    let rtf = try XCTUnwrap(NSAttributedString(string: "the repository", attributes: [.link: link])
+      .rtf(from: NSRange(location: 0, length: 14), documentAttributes: [:]))
+    document.linkContents = [ContentSnapshot(type: NSPasteboard.PasteboardType.rtf.rawValue, value: rtf)]
+    XCTAssertTrue(AskSearchPlan(kind: .link, domain: "github.com").matches(document, ocr: false))
+
+    let relative = "<a href=\"/org/repo\">relative</a>"
+    document.linkContents = [
+      ContentSnapshot(type: NSPasteboard.PasteboardType.html.rawValue, value: Data(relative.utf8))
+    ]
+    XCTAssertFalse(AskSearchPlan(kind: .link).matches(document, ocr: false))
+    XCTAssertTrue(AskSearchPlan(terms: ["repository"]).matches(document, ocr: false))
   }
 
   func testAskWebsiteFilterCombinesWithOtherFilters() {

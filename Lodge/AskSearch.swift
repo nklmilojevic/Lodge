@@ -56,18 +56,7 @@ struct AskSearchPlan: Sendable {
     }
     if let startDate, document.copiedAt < startDate { return false }
     if let endDate, document.copiedAt >= endDate { return false }
-    if kind == .link || domain != nil {
-      let text = document.text
-      let links = Self.linkDetector?.matches(in: text, range: NSRange(text.startIndex..., in: text)) ?? []
-      guard links.contains(where: { match in
-        guard let url = match.url, ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
-              let host = url.host?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".")) else {
-          return false
-        }
-        guard let domain else { return true }
-        return host == domain || host.hasSuffix("." + domain)
-      }) else { return false }
-    }
+    if kind == .link || domain != nil, !hasMatchingLink(document) { return false }
     switch kind {
     case .any: break
     case .image: if !document.hasImage { return false }
@@ -80,6 +69,25 @@ struct AskSearchPlan: Sendable {
       let term = ContentProcessor.normalize($0)
       return text.contains(term) || imageText.contains(term)
     }
+  }
+
+  private func hasMatchingLink(_ document: AskSearchDocument) -> Bool {
+    let text = document.text
+    let detected = Self.linkDetector?.matches(in: text, range: NSRange(text.startIndex..., in: text))
+      .compactMap(\.url) ?? []
+    if detected.contains(where: accepts) { return true }
+    return ContentProcessor.linkDestinations(document.linkContents)
+      .compactMap { URL(string: $0) }
+      .contains(where: accepts)
+  }
+
+  private func accepts(_ url: URL) -> Bool {
+    guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+          let host = url.host?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".")) else {
+      return false
+    }
+    guard let domain else { return true }
+    return host == domain || host.hasSuffix("." + domain)
   }
 
   static func date(_ value: String?, timeZone: TimeZone = .current) throws -> Date? {
@@ -105,6 +113,7 @@ struct AskSearchDocument: Sendable {
   var application = ""
   var copiedAt = Date()
   var hasImage = false
+  var linkContents: [ContentSnapshot] = []
 }
 
 enum AskSearchError: Error { case unavailable, invalidPlan, queryTooLong }
@@ -199,10 +208,12 @@ enum AskSearch {
 
   @MainActor
   static func search(_ plan: AskSearchPlan, within items: [HistoryItemDecorator], ocr: Bool) async -> [Search.SearchResult] {
+    let needsLinks = plan.kind == .link || plan.domain != nil
     let documents = items.map {
       AskSearchDocument(id: $0.id, title: $0.title, text: $0.searchableText, ocr: $0.ocrText,
                         application: [$0.application, $0.item.application].compactMap { $0 }.joined(separator: " "),
-                        copiedAt: $0.item.lastCopiedAt, hasImage: $0.hasImage)
+                        copiedAt: $0.item.lastCopiedAt, hasImage: $0.hasImage,
+                        linkContents: needsLinks ? $0.item.linkSnapshots : [])
     }
     let worker = Task.detached(priority: .userInitiated) {
       documents.compactMap { document -> UUID? in
