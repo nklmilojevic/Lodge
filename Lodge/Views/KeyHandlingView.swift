@@ -118,6 +118,7 @@ struct HistoryKeyHandler {
       appState.history.togglePin(appState.history.selectedItem)
       return true
     case .selectCurrentItem:
+      if appState.history.submitAskIfNeeded() { return true }
       appState.select()
       return true
     case .close:

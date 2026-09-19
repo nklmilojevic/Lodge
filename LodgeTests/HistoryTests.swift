@@ -8,6 +8,7 @@ import SwiftUI
 final class HistoryTests: XCTestCase {
   var history: History!
   var container: ModelContainer!
+  let savedSearchMode = Defaults[.searchMode]
   let savedSize = Defaults[.size]
   let savedSortBy = Defaults[.sortBy]
   let savedOCR = Defaults[.ocrInImages]
@@ -16,6 +17,7 @@ final class HistoryTests: XCTestCase {
   override func setUpWithError() throws {
     container = try ModelContainer(for: HistoryItem.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
     history = History(repository: HistoryRepository(context: container.mainContext), observePreferences: false)
+    Defaults[.searchMode] = .exact
     Defaults[.size] = 10
     Defaults[.sortBy] = .firstCopiedAt
     Defaults[.ocrInImages] = false
@@ -24,6 +26,7 @@ final class HistoryTests: XCTestCase {
 
   override func tearDown() {
     history.stop()
+    Defaults[.searchMode] = savedSearchMode
     Defaults[.size] = savedSize
     Defaults[.sortBy] = savedSortBy
     Defaults[.ocrInImages] = savedOCR
@@ -267,6 +270,64 @@ final class HistoryTests: XCTestCase {
     try await Task.sleep(for: .milliseconds(100))
     let restoredPane = try XCTUnwrap(reopened.splitView.arrangedSubviews.first)
     XCTAssertEqual(restoredPane.frame.width, 350, accuracy: 1)
+  }
+
+  func testAskWaitsForReturnAndUsesRealItems() async throws {
+    var calls = 0
+    history = History(repository: HistoryRepository(context: container.mainContext), observePreferences: false,
+                      makeSearchPlan: { _ in
+      calls += 1
+      return AskSearchPlan(terms: ["invoice"])
+    })
+    Defaults[.searchMode] = .ask
+    let invoice = try add("invoice 123")
+    _ = try add("shopping list")
+    history.searchQuery = "Find my invoice"
+    await history.waitForSearch()
+    XCTAssertEqual(calls, 0)
+    XCTAssertTrue(history.items.isEmpty)
+    XCTAssertTrue(history.submitAskIfNeeded())
+    XCTAssertTrue(history.submitAskIfNeeded())
+    await history.waitForSearch()
+    XCTAssertEqual(calls, 1)
+    XCTAssertEqual(history.items, [invoice])
+    XCTAssertFalse(history.submitAskIfNeeded())
+    let newer = try add("invoice 456")
+    await history.waitForSearch()
+    XCTAssertEqual(Set(history.items.map(\.id)), Set([invoice.id, newer.id]))
+    XCTAssertEqual(calls, 1)
+  }
+
+  func testAskFailureUsesExactSearch() async throws {
+    history = History(repository: HistoryRepository(context: container.mainContext), observePreferences: false,
+                      makeSearchPlan: { _ in throw AskSearchError.unavailable })
+    Defaults[.searchMode] = .ask
+    let item = try add("invoice")
+    _ = try add("unrelated")
+    history.searchQuery = "invoice"
+    XCTAssertTrue(history.submitAskIfNeeded())
+    await history.waitForSearch()
+    XCTAssertEqual(history.items, [item])
+    XCTAssertNotNil(history.askSearchMessage)
+    XCTAssertFalse(history.isSearching)
+  }
+
+  func testAskDiscardsAResponseAfterQueryChanges() async throws {
+    var pending: CheckedContinuation<AskSearchPlan, Never>?
+    history = History(repository: HistoryRepository(context: container.mainContext), observePreferences: false,
+                      makeSearchPlan: { _ in await withCheckedContinuation { pending = $0 } })
+    Defaults[.searchMode] = .ask
+    let item = try add("invoice")
+    history.searchQuery = "Find my invoice"
+    XCTAssertTrue(history.submitAskIfNeeded())
+    while pending == nil { await Task.yield() }
+    history.searchQuery = "something else"
+    pending?.resume(returning: AskSearchPlan(terms: ["invoice"]))
+    await history.waitForSearch()
+    XCTAssertTrue(history.items.isEmpty)
+    XCTAssertFalse(history.isSearching)
+    history.searchQuery = ""
+    XCTAssertEqual(history.items, [item])
   }
 
   private func keyboardEvent(keyCode: UInt16, character: Int) throws -> NSEvent {

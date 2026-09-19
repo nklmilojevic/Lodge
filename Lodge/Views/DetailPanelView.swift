@@ -129,6 +129,14 @@ struct SelectableText: NSViewRepresentable {
 struct MetadataSectionView: View {
   var item: HistoryItemDecorator
 
+  private static let copiedDateFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale = .autoupdatingCurrent
+    formatter.dateStyle = .medium
+    formatter.timeStyle = .short
+    return formatter
+  }()
+
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       Text("detail_panel_information")
@@ -165,9 +173,8 @@ struct MetadataSectionView: View {
 
       // Timestamps
       MetadataRow(label: "detail_panel_copied") {
-        Text(item.item.lastCopiedAt, style: .date)
-        Text("detail_panel_at")
-        Text(item.item.lastCopiedAt, style: .time)
+        Text(Self.copiedDateFormatter.string(from: item.item.lastCopiedAt))
+          .fixedSize(horizontal: false, vertical: true)
       }
 
       if item.item.numberOfCopies > 1 {

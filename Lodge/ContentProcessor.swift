@@ -104,4 +104,29 @@ enum ContentProcessor {
     }
     return ""
   }
+
+  // Plain text drops the destinations behind hyperlinks, so read them from the rich content.
+  static func linkDestinations(_ contents: [ContentSnapshot]) -> [String] {
+    func data(_ type: NSPasteboard.PasteboardType) -> Data? {
+      contents.first { $0.type == type.rawValue }?.value
+    }
+    var destinations: [String] = []
+    if let data = data(.html), let document = try? SwiftSoup.parse(data),
+       let anchors = try? document.select("a[href]") {
+      for anchor in anchors {
+        guard let href = try? anchor.attr("href"), !href.isEmpty else { continue }
+        destinations.append(href)
+      }
+    }
+    if let data = data(.rtf), let text = NSAttributedString(rtf: data, documentAttributes: nil) {
+      text.enumerateAttribute(.link, in: NSRange(location: 0, length: text.length)) { value, _, _ in
+        if let url = value as? URL {
+          destinations.append(url.absoluteString)
+        } else if let string = value as? String {
+          destinations.append(string)
+        }
+      }
+    }
+    return destinations
+  }
 }
