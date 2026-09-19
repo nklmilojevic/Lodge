@@ -9,6 +9,7 @@ final class Search {
     case fuzzy
     case regexp
     case mixed
+    case ask
 
     var id: Self { self }
 
@@ -20,6 +21,8 @@ final class Search {
         return NSLocalizedString("Fuzzy", tableName: "GeneralSettings", comment: "")
       case .regexp:
         return NSLocalizedString("Regex", tableName: "GeneralSettings", comment: "")
+      case .ask:
+        return NSLocalizedString("Ask", tableName: "GeneralSettings", comment: "")
       case .mixed:
         return NSLocalizedString("Mixed", tableName: "GeneralSettings", comment: "")
       }

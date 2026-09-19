@@ -68,6 +68,12 @@ struct GeneralSettingsPane: View {
         }
         .labelsHidden()
         .frame(width: 180, alignment: .leading)
+        if searchMode == .ask {
+          Text(AskSearch.availabilityMessage ?? "Type a request, then press Return. Ask runs on this Mac.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
       }
 
       Settings.Section(

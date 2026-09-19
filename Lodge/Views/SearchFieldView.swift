@@ -27,6 +27,7 @@ struct SearchFieldView: NSViewRepresentable {
 
   func updateNSView(_ field: HistorySearchField, context: Context) {
     context.coordinator.parent = self
+    field.placeholderString = NSLocalizedString(placeholder, comment: "")
     if field.stringValue != query, (field.currentEditor() as? NSTextView)?.hasMarkedText() != true {
       field.stringValue = query
     }

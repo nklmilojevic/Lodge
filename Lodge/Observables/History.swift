@@ -12,6 +12,7 @@ final class History {
   let logger = Logger(label: "com.nklmilojevic.Lodge")
   private(set) var items: [HistoryItemDecorator] = []
   private(set) var all: [HistoryItemDecorator] = []
+  private(set) var askSearchMessage: String?
   private(set) var isSearching = false
   private(set) var isLoaded = false
   var errorMessage: String?
@@ -41,12 +42,18 @@ final class History {
   var searchQuery = "" {
     didSet {
       guard searchQuery != oldValue else { return }
+      completedAskQuery = nil
+      askPlan = nil
       applySearch(selectFirst: true)
     }
   }
 
   @ObservationIgnored private let service: HistoryService
   @ObservationIgnored private let search = Search()
+  @ObservationIgnored private let makeSearchPlan: @MainActor (String) async throws -> AskSearchPlan
+  @ObservationIgnored private var completedAskQuery: String?
+  @ObservationIgnored private var askPlan: AskSearchPlan?
+  @ObservationIgnored private var isPlanningAsk = false
   @ObservationIgnored private let ocrSearchThrottler = Throttler(minimumDelay: 0.1)
   @ObservationIgnored private let images: ImageProcessingService
   @ObservationIgnored private let ocr: OCRService
@@ -63,7 +70,9 @@ final class History {
   @ObservationIgnored private var editGenerations: [UUID: UUID] = [:]
 
   init(repository: HistoryRepository, temporaryStorage: Bool = false,
-       images: ImageProcessingService? = nil, ocr: OCRService? = nil, observePreferences: Bool = true) {
+       images: ImageProcessingService? = nil, ocr: OCRService? = nil, observePreferences: Bool = true,
+       makeSearchPlan: @escaping @MainActor (String) async throws -> AskSearchPlan = AskSearch.plan) {
+    self.makeSearchPlan = makeSearchPlan
     service = HistoryService(repository: repository)
     self.temporaryStorage = temporaryStorage
     self.images = images ?? ImageProcessingService()
@@ -300,22 +309,64 @@ final class History {
     }
   }
 
-  private func applySearch(selectFirst: Bool) {
+  // Return starts Ask once. A later Return accepts the selected result.
+  func submitAskIfNeeded() -> Bool {
+    guard Defaults[.searchMode] == .ask, !searchQuery.isEmpty else { return false }
+    if isSearching { return true }
+    guard completedAskQuery != searchQuery else { return false }
+    applySearch(selectFirst: true, submitAsk: true)
+    return true
+  }
+
+  private func applySearch(selectFirst: Bool, submitAsk: Bool = false) {
+    let asking = Defaults[.searchMode] == .ask
+    if asking && isPlanningAsk && !selectFirst { return }
     searchTask?.cancel()
     searchGeneration &+= 1
     let generation = searchGeneration
+    isPlanningAsk = false
+    if !asking || searchQuery.isEmpty {
+      completedAskQuery = nil
+      askPlan = nil
+      askSearchMessage = nil
+    }
     if searchQuery.isEmpty {
       isSearching = false
       updateItems(all.map { Search.SearchResult(object: $0) }, selectFirst: selectFirst)
       return
     }
+    if asking && !submitAsk && completedAskQuery != searchQuery {
+      isSearching = false
+      askSearchMessage = "Press Return to search."
+      updateItems([], selectFirst: selectFirst)
+      return
+    }
     isSearching = true
+    isPlanningAsk = asking && submitAsk
     let query = searchQuery
-    let snapshot = all
-    let revision = revision
+    if isPlanningAsk { askSearchMessage = "Searching on this Mac…" }
     searchTask = Task { [weak self] in
       guard let self else { return }
-      let results = await self.search.search(string: query, within: snapshot, revision: revision)
+      if asking && submitAsk {
+        do {
+          let plan = try await self.makeSearchPlan(query)
+          guard !Task.isCancelled, generation == self.searchGeneration else { return }
+          self.askPlan = plan
+          self.askSearchMessage = "Filters applied. Press Return to use the selected item."
+        } catch {
+          guard !Task.isCancelled, generation == self.searchGeneration else { return }
+          self.askPlan = nil
+          self.askSearchMessage = AskSearch.availabilityMessage ?? "Ask failed. Exact search results are shown."
+        }
+        self.completedAskQuery = query
+        self.isPlanningAsk = false
+      }
+      let results: [Search.SearchResult]
+      if asking, let plan = self.askPlan {
+        results = await AskSearch.search(plan, within: self.all, ocr: Defaults[.ocrInImages])
+      } else {
+        results = await self.search.search(string: query, within: self.all, revision: self.revision)
+      }
       guard !Task.isCancelled, generation == self.searchGeneration else { return }
       self.isSearching = false
       self.updateItems(results, selectFirst: selectFirst)

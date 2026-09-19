@@ -83,6 +83,24 @@ Download the latest release from the
 xcodebuild -scheme Lodge -configuration Debug
 ```
 
+### Ask search (experimental)
+
+Select **Ask** from the menu beside the search field, or in **Settings > General > Search**.
+Type a request such as “links from Safari yesterday”, then press **Return**.
+After the results appear, press **Return** again to use the selected item.
+
+Ask requires macOS 26 or later and an available Apple Intelligence model.
+Only your request goes to the on-device model. Lodge applies the resulting filters
+locally to clipboard text, optional OCR text, website, source app, and last copy date.
+If Ask is unavailable or fails, Lodge shows exact search results and a status message.
+Other search modes still work on macOS 14 and later.
+
+This first version uses literal text terms and metadata filters. It does not search
+by meaning. Link filters find HTTP or HTTPS URLs, including links within copied text.
+“GitHub links” searches github.com and its subdomains, from any app and date.
+“GitHub links from Brave yesterday” also applies the requested app and date filters.
+Model output can be incorrect. Check the results before you use an item.
+
 ## Distribution
 
 For GitHub releases, notarization, and Sparkle appcast setup, see

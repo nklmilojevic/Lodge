@@ -6,6 +6,122 @@ class SearchTests: XCTestCase {
   let savedSearchMode = Defaults[.searchMode]
   var items: [HistoryItemDecorator]!
 
+  func testAskFiltersAppTypeDateAndTextTogether() throws {
+    let zone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+    let start = try XCTUnwrap(AskSearchPlan.date("2026-09-17", timeZone: zone))
+    let end = try XCTUnwrap(AskSearchPlan.date("2026-09-18", timeZone: zone))
+    let plan = AskSearchPlan(terms: ["invoice"], application: "Safari", kind: .image,
+                             startDate: start, endDate: end)
+    var document = AskSearchDocument(id: UUID(), ocr: "Invoice 123", application: "com.apple.Safari",
+                                     copiedAt: start, hasImage: true)
+    XCTAssertTrue(plan.matches(document, ocr: true))
+    XCTAssertFalse(plan.matches(document, ocr: false))
+    document.copiedAt = end
+    XCTAssertFalse(plan.matches(document, ocr: true))
+    document.copiedAt = start.addingTimeInterval(-1)
+    XCTAssertFalse(plan.matches(document, ocr: true))
+    document.copiedAt = start
+    document.application = "Notes"
+    XCTAssertFalse(plan.matches(document, ocr: true))
+    document.application = "Safari"
+    document.hasImage = false
+    XCTAssertFalse(plan.matches(document, ocr: true))
+  }
+
+  func testAskLinksAndAllTerms() {
+    var plan = AskSearchPlan(kind: .link)
+    var document = AskSearchDocument(id: UUID(), text: "https://example.com/invoice")
+    XCTAssertTrue(plan.matches(document, ocr: false))
+    document.text = "See https://example.com/invoice for details"
+    XCTAssertTrue(plan.matches(document, ocr: false))
+    plan = AskSearchPlan(terms: ["invoice", "paid"], kind: .text)
+    XCTAssertFalse(plan.matches(document, ocr: false))
+    document.text = "Invoice PAID"
+    XCTAssertTrue(plan.matches(document, ocr: false))
+  }
+
+  func testAskWebsiteLinksMatchHostsAcrossAppsAndDates() throws {
+    let plan = AskSearchPlan(kind: .link, domain: try AskSearchPlan.domain("GitHub.COM"))
+    var document = AskSearchDocument(id: UUID(), text: "https://github.com/org/repo/issues/12",
+                                     application: "Brave Origin", copiedAt: Date(timeIntervalSince1970: 0))
+    XCTAssertTrue(plan.matches(document, ocr: false))
+    document.application = "Slack"
+    document.text = "See [the docs](https://docs.github.com/en) for details."
+    XCTAssertTrue(plan.matches(document, ocr: false))
+    document.text = "https://notgithub.com/repo"
+    XCTAssertFalse(plan.matches(document, ocr: false))
+    document.text = "https://github.com.example.org/repo"
+    XCTAssertFalse(plan.matches(document, ocr: false))
+    document.text = "https://example.org/github.com"
+    XCTAssertFalse(plan.matches(document, ocr: false))
+    document.text = "GitHub links"
+    XCTAssertFalse(plan.matches(document, ocr: false))
+    document.text = "mailto:hello@github.com"
+    XCTAssertFalse(plan.matches(document, ocr: false))
+    document.text = "https://example.org and https://github.com/org/repo"
+    XCTAssertTrue(plan.matches(document, ocr: false))
+  }
+
+  func testAskWebsiteFilterCombinesWithOtherFilters() {
+    let plan = AskSearchPlan(terms: ["issues"], application: "Brave", kind: .link, domain: "github.com")
+    var document = AskSearchDocument(id: UUID(), text: "https://github.com/org/repo/issues/12",
+                                     application: "Brave Origin")
+    XCTAssertTrue(plan.matches(document, ocr: false))
+    document.application = "Safari"
+    XCTAssertFalse(plan.matches(document, ocr: false))
+    document.application = "Brave Origin"
+    document.text = "https://github.com/org/repo/pulls"
+    XCTAssertFalse(plan.matches(document, ocr: false))
+  }
+
+  func testAskFilterEvidenceMustAppearInRequest() {
+    XCTAssertFalse(AskSearchPlan.hasEvidence("today", in: "github links"))
+    XCTAssertFalse(AskSearchPlan.hasEvidence("from GitHub", in: "github links"))
+    XCTAssertFalse(AskSearchPlan.hasEvidence(nil, in: "github links"))
+    XCTAssertFalse(AskSearchPlan.hasEvidence("  ", in: "github links"))
+    XCTAssertTrue(AskSearchPlan.hasEvidence("from Brave", in: "GitHub links from Brave yesterday"))
+    XCTAssertTrue(AskSearchPlan.hasEvidence("yesterday", in: "GitHub links from Brave yesterday"))
+  }
+
+  func testAskRejectsInvalidDomains() {
+    XCTAssertThrowsError(try AskSearchPlan.domain("https://github.com"))
+    XCTAssertThrowsError(try AskSearchPlan.domain("github.com/path"))
+    XCTAssertThrowsError(try AskSearchPlan.domain("github..com"))
+    XCTAssertThrowsError(try AskSearchPlan.domain("github com"))
+    XCTAssertNil(try AskSearchPlan.domain(nil))
+    XCTAssertNil(try AskSearchPlan.domain("null"))
+    XCTAssertNil(try AskSearchPlan.domain(" None "))
+  }
+
+  func testAskRelativeDatesUseCalendarBoundariesAcrossDaylightSaving() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Europe/Belgrade"))
+    calendar.firstWeekday = 2
+    let now = try XCTUnwrap(AskSearchPlan.date("2026-03-29", timeZone: calendar.timeZone))
+    let tomorrow = try XCTUnwrap(AskSearchPlan.date("2026-03-30", timeZone: calendar.timeZone))
+    let today = try AskSearchPlan.dates(for: "today", now: now, calendar: calendar)
+    XCTAssertEqual(today.0, now)
+    XCTAssertEqual(today.1, tomorrow)
+    XCTAssertEqual(tomorrow.timeIntervalSince(now), 23 * 60 * 60)
+    let yesterday = try AskSearchPlan.dates(for: "yesterday", now: tomorrow, calendar: calendar)
+    XCTAssertEqual(yesterday.0, now)
+    XCTAssertEqual(yesterday.1, tomorrow)
+    let week = try AskSearchPlan.dates(for: "thisWeek", now: now, calendar: calendar)
+    XCTAssertEqual(week.0, try AskSearchPlan.date("2026-03-23", timeZone: calendar.timeZone))
+    XCTAssertEqual(week.1, tomorrow)
+    let previousMonth = try AskSearchPlan.dates(for: "lastMonth", now: now, calendar: calendar)
+    XCTAssertEqual(previousMonth.0, try AskSearchPlan.date("2026-02-01", timeZone: calendar.timeZone))
+    XCTAssertEqual(previousMonth.1, try AskSearchPlan.date("2026-03-01", timeZone: calendar.timeZone))
+    XCTAssertThrowsError(try AskSearchPlan.dates(for: "unknown", now: now, calendar: calendar))
+  }
+
+  func testAskRejectsInvalidDates() {
+    XCTAssertThrowsError(try AskSearchPlan.date("2026-02-30"))
+    XCTAssertThrowsError(try AskSearchPlan.date("yesterday"))
+    XCTAssertThrowsError(try AskSearchPlan.date("2026-9-1"))
+    XCTAssertNil(try AskSearchPlan.date(nil))
+  }
+
   override func tearDown() {
     super.tearDown()
     Defaults[.searchMode] = savedSearchMode
