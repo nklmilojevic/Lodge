@@ -8,7 +8,8 @@ import Sauce
 @Observable
 @MainActor
 final class History {
-  static let shared = History(repository: .shared, temporaryStorage: Storage.shared.loadError != nil)
+  static let shared = History(repository: .shared, temporaryStorage: Storage.shared.loadError != nil,
+                              semantic: AppPreferences.isTesting ? nil : SemanticEngine.shared)
   let logger = Logger(label: "com.nklmilojevic.Lodge")
   private(set) var items: [HistoryItemDecorator] = []
   private(set) var all: [HistoryItemDecorator] = []
@@ -88,7 +89,7 @@ final class History {
   init(repository: HistoryRepository, temporaryStorage: Bool = false,
        images: ImageProcessingService? = nil, ocr: OCRService? = nil, observePreferences: Bool = true,
        makeSearchPlan: @escaping @MainActor (String) async throws -> AskSearchPlan = AskSearch.plan,
-       semantic: SemanticEmbedder? = AppPreferences.isTesting ? nil : SemanticEngine.shared) {
+       semantic: SemanticEmbedder? = nil) {
     self.makeSearchPlan = makeSearchPlan
     self.semantic = semantic
     service = HistoryService(repository: repository)

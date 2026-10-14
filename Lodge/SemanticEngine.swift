@@ -137,7 +137,7 @@ final class SemanticModelStore {
     return false
   }
 
-  static let modelsFolder = URL.applicationSupportDirectory.appending(path: "Lodge/Models")
+  nonisolated static let modelsFolder = URL.applicationSupportDirectory.appending(path: "Lodge/Models")
 
   init(folder: URL = SemanticModelStore.modelsFolder.appending(path: "embeddinggemma-2-coreml")) {
     files = SemanticModelFiles(folder: folder)
@@ -184,68 +184,19 @@ final class SemanticModelStore {
   /// Downloads the text model, and the image model when `images` is true.
   func install(images: Bool) {
     guard Self.isSupported, !isBusy else { return }
-    var pending: [SemanticModelFiles.File] = []
-    if !textInstalled { pending += SemanticModelFiles.text }
-    if images && !imagesInstalled { pending += SemanticModelFiles.images }
-    pending = pending.filter { !FileManager.default.fileExists(atPath: files.url(for: $0.path).path) }
-    guard !pending.isEmpty else { return refresh() }
-    let total = pending.reduce(0) { $0 + $1.bytes }
-    let files = files
+    let pending = missingFiles(images: images)
+    guard !pending.isEmpty else {
+      refresh()
+      return
+    }
     phase = .downloading(fraction: 0)
     installGeneration &+= 1
     let generation = installGeneration
     downloadTask = Task { [weak self] in
       guard let self else { return }
-      var completed: Int64 = 0
       let outcome: Phase
       do {
-        try FileManager.default.createDirectory(at: files.folder, withIntermediateDirectories: true)
-        var folder = files.folder
-        var values = URLResourceValues()
-        values.isExcludedFromBackup = true
-        try? folder.setResourceValues(values)
-        for file in pending {
-          let offset = completed
-          let download = FileDownload(url: file.url) { [weak self] written in
-            Task { @MainActor in
-              guard let self, case .downloading = self.phase else { return }
-              self.phase = .downloading(fraction: Double(offset + written) / Double(total))
-            }
-          }
-          self.download = download
-          let temporary = try await download.start()
-          guard !Task.isCancelled else {
-            try? FileManager.default.removeItem(at: temporary)
-            throw CancellationError()
-          }
-          let destination = files.url(for: file.path)
-          let staged = destination.appendingPathExtension("partial")
-          // Verify and stage on the destination volume, then commit only if no cancel or removal superseded this install.
-          try await Task.detached(priority: .utility) {
-            defer { try? FileManager.default.removeItem(at: temporary) }
-            let size = try temporary.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-            guard Int64(size) == file.bytes, try SemanticModelFiles.sha256(of: temporary) == file.sha256 else {
-              throw SemanticModelError.verification
-            }
-            try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(),
-                                                    withIntermediateDirectories: true)
-            if FileManager.default.fileExists(atPath: staged.path) { try FileManager.default.removeItem(at: staged) }
-            try FileManager.default.moveItem(at: temporary, to: staged)
-          }.value
-          do {
-            guard generation == self.installGeneration, !Task.isCancelled else { throw CancellationError() }
-            if FileManager.default.fileExists(atPath: destination.path) {
-              _ = try FileManager.default.replaceItemAt(destination, withItemAt: staged)
-            } else {
-              try FileManager.default.moveItem(at: staged, to: destination)
-            }
-          } catch {
-            try? FileManager.default.removeItem(at: staged)
-            throw error
-          }
-          completed += file.bytes
-          self.phase = .downloading(fraction: Double(completed) / Double(total))
-        }
+        try await self.download(pending, generation: generation)
         outcome = .idle
       } catch is CancellationError {
         outcome = .idle
@@ -254,14 +205,94 @@ final class SemanticModelStore {
       } catch {
         outcome = Task.isCancelled ? .idle : .failed("The model could not be downloaded. Try again.")
       }
-      self.refresh()
-      // A cancel, removal, or newer install owns the state now.
-      guard generation == self.installGeneration else { return }
-      self.phase = outcome
-      self.download = nil
-      self.downloadTask = nil
-      NotificationCenter.default.post(name: .semanticModelChanged, object: nil)
+      self.finishInstall(generation: generation, outcome: outcome)
     }
+  }
+
+  private func missingFiles(images: Bool) -> [SemanticModelFiles.File] {
+    var wanted: [SemanticModelFiles.File] = []
+    if !textInstalled { wanted += SemanticModelFiles.text }
+    if images && !imagesInstalled { wanted += SemanticModelFiles.images }
+    var missing: [SemanticModelFiles.File] = []
+    for file in wanted where !FileManager.default.fileExists(atPath: files.url(for: file.path).path) {
+      missing.append(file)
+    }
+    return missing
+  }
+
+  private func download(_ pending: [SemanticModelFiles.File], generation: UInt64) async throws {
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    var folder = folder
+    var values = URLResourceValues()
+    values.isExcludedFromBackup = true
+    try? folder.setResourceValues(values)
+    var total: Int64 = 0
+    for file in pending { total += file.bytes }
+    var completed: Int64 = 0
+    for file in pending {
+      try await download(file, generation: generation, completed: completed, total: total)
+      completed += file.bytes
+      phase = .downloading(fraction: Double(completed) / Double(total))
+    }
+  }
+
+  /// Downloads, verifies, and stages one file on the destination volume, then commits it only if no cancel or
+  /// removal superseded this install. An existing file is replaced atomically.
+  private func download(_ file: SemanticModelFiles.File, generation: UInt64, completed: Int64, total: Int64)
+    async throws {
+    let download = FileDownload(url: file.url) { [weak self] written in
+      Task { @MainActor [weak self] in self?.reportProgress(Double(completed + written) / Double(total)) }
+    }
+    self.download = download
+    let temporary = try await download.start()
+    guard !Task.isCancelled else {
+      try? FileManager.default.removeItem(at: temporary)
+      throw CancellationError()
+    }
+    let destination = files.url(for: file.path)
+    let staged = destination.appendingPathExtension("partial")
+    try await Self.stage(temporary, as: file, at: staged)
+    do {
+      guard generation == installGeneration, !Task.isCancelled else { throw CancellationError() }
+      if FileManager.default.fileExists(atPath: destination.path) {
+        _ = try FileManager.default.replaceItemAt(destination, withItemAt: staged)
+      } else {
+        try FileManager.default.moveItem(at: staged, to: destination)
+      }
+    } catch {
+      try? FileManager.default.removeItem(at: staged)
+      throw error
+    }
+  }
+
+  private func reportProgress(_ fraction: Double) {
+    guard case .downloading = phase else { return }
+    phase = .downloading(fraction: fraction)
+  }
+
+  /// Checks the size and SHA-256 off the main actor and moves the file to `staged`.
+  private nonisolated static func stage(_ temporary: URL, as file: SemanticModelFiles.File, at staged: URL)
+    async throws {
+    try await Task.detached(priority: .utility) {
+      defer { try? FileManager.default.removeItem(at: temporary) }
+      let size = try temporary.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+      guard Int64(size) == file.bytes, try SemanticModelFiles.sha256(of: temporary) == file.sha256 else {
+        throw SemanticModelError.verification
+      }
+      try FileManager.default.createDirectory(at: staged.deletingLastPathComponent(), withIntermediateDirectories: true)
+      if FileManager.default.fileExists(atPath: staged.path) { try FileManager.default.removeItem(at: staged) }
+      try FileManager.default.moveItem(at: temporary, to: staged)
+    }.value
+  }
+
+  private func finishInstall(generation: UInt64, outcome: Phase) {
+    refresh()
+    // A cancel, removal, or newer install owns the state now.
+    guard generation == installGeneration else { return }
+    phase = outcome
+    download = nil
+    downloadTask = nil
+    NotificationCenter.default.post(name: .semanticModelChanged, object: nil)
   }
 
   func cancel() {
