@@ -143,6 +143,7 @@ final class OCRService {
     let id: UUID
     let source: () -> ImageSource?
     let completion: (OCRResult) -> Void
+    let failure: () -> Void
   }
   private var queue: [Job] = []
   private var running: [UUID: Task<Void, Never>] = [:]
@@ -156,9 +157,11 @@ final class OCRService {
     self.recognize = recognize
   }
 
-  func enqueue(id: UUID, source: @escaping () -> ImageSource?, completion: @escaping (OCRResult) -> Void) {
+  /// `failure` runs when the image could not be read, but not when the work was cancelled.
+  func enqueue(id: UUID, source: @escaping () -> ImageSource?, failure: @escaping () -> Void = {},
+               completion: @escaping (OCRResult) -> Void) {
     guard running[id] == nil || running[id]?.isCancelled == true, !queue.contains(where: { $0.id == id }) else { return }
-    queue.append(Job(id: id, source: source, completion: completion))
+    queue.append(Job(id: id, source: source, completion: completion, failure: failure))
     startNext()
   }
 
@@ -175,11 +178,16 @@ final class OCRService {
   private func startNext() {
     while running.count < workerLimit, let next = queue.firstIndex(where: { running[$0.id] == nil }) {
       let job = queue.remove(at: next)
-      guard let source = job.source() else { continue }
+      guard let source = job.source() else {
+        job.failure()
+        continue
+      }
       let recognize = recognize
       running[job.id] = Task { [weak self] in
         let result = await recognize(source)
-        if !Task.isCancelled, let result { job.completion(result) }
+        if !Task.isCancelled {
+          if let result { job.completion(result) } else { job.failure() }
+        }
         self?.running.removeValue(forKey: job.id)
         self?.startNext()
       }

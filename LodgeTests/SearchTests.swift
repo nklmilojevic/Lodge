@@ -118,6 +118,15 @@ class SearchTests: XCTestCase {
     XCTAssertEqual(AskSearchPlan.kind(.link, supportedBy: "github stuff", domain: "github.com"), .link)
     XCTAssertEqual(AskSearchPlan.kind(.link, supportedBy: "recipes", domain: nil), .any)
     XCTAssertEqual(AskSearchPlan.kind(.any, supportedBy: "image", domain: nil), .any)
+    XCTAssertEqual(AskSearchPlan.kind(.image, supportedBy: "webp files from Telegram", domain: nil), .image)
+    XCTAssertEqual(AskSearchPlan.kind(.image, supportedBy: "the tiff scan", domain: nil), .image)
+    // The source app's name is not a content type.
+    XCTAssertEqual(AskSearchPlan.kind(.text, supportedBy: "paying customers from Notes", domain: nil,
+                                      application: "Notes"), .any)
+    XCTAssertEqual(AskSearchPlan.kind(.text, supportedBy: "notes from Notes", domain: nil, application: "Notes"), .text)
+    // Text inside an image is not a request for text items.
+    XCTAssertEqual(AskSearchPlan.kind(.text, supportedBy: "text in screenshot", domain: nil), .any)
+    XCTAssertEqual(AskSearchPlan.kind(.image, supportedBy: "text in screenshot", domain: nil), .image)
   }
 
   func testAskRejectsInvalidDomains() {

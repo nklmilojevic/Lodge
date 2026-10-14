@@ -263,6 +263,49 @@ final class SemanticHistoryTests: XCTestCase {
     XCTAssertEqual(history.items.first?.id, chart.id)
   }
 
+  func testScreenshotsAreNotVersionsOfTextWithTheSameWords() async throws {
+    Defaults[.ocrInImages] = true
+    Defaults[.groupSimilarItems] = true
+    embedder.vectors["Invoice 42"] = FakeEmbedder.vector([3: 1])
+    makeHistory(imageText: "Invoice 42")
+    let text = try add("Invoice 42")
+    let image = try addImage()
+    try await waitForImageText(image)
+    XCTAssertEqual(image.item.embeddingSource, "ocr1")
+    history.refreshSearchResults()
+    await history.waitForGroups()
+    XCTAssertEqual(history.versions(of: image), [])
+    XCTAssertTrue(text.isVisible)
+    XCTAssertTrue(image.isVisible)
+  }
+
+  func testImageTextIsRecognizedAgain() async throws {
+    Defaults[.ocrInImages] = true
+    makeHistory(imageText: "Paying customers")
+    let image = try addImage()
+    try await waitForImageText(image)
+    XCTAssertEqual(image.item.ocrVersion, HistoryItem.currentOCRVersion)
+    // Text from an earlier recognition is replaced by a successful new one.
+    image.item.ocrText = "Pwng customw"
+    image.item.ocrVersion = 0
+    history.backfillOCRIfNeeded()
+    for _ in 0..<200 where image.item.ocrText != "Paying customers" { try await Task.sleep(for: .milliseconds(10)) }
+    XCTAssertEqual(image.item.ocrText, "Paying customers")
+    XCTAssertEqual(image.item.ocrVersion, HistoryItem.currentOCRVersion)
+  }
+
+  func testUnreadableImagesKeepEarlierTextAndAreNotTriedAgain() async throws {
+    Defaults[.ocrInImages] = true
+    makeHistory(imageText: nil)
+    let image = try addImage()
+    image.item.ocrText = "Paying customers"
+    image.item.ocrVersion = 0
+    history.backfillOCRIfNeeded()
+    for _ in 0..<200 where image.item.ocrVersion == 0 { try await Task.sleep(for: .milliseconds(10)) }
+    XCTAssertEqual(image.item.ocrText, "Paying customers")
+    XCTAssertEqual(image.item.ocrVersion, HistoryItem.currentOCRVersion)
+  }
+
   func testImageTextIsEmbeddedWithoutTheImageModel() async throws {
     Defaults[.ocrInImages] = true
     embedder.vectors["Invoice 42"] = FakeEmbedder.vector([3: 1])
@@ -601,31 +644,5 @@ final class SemanticModelStoreTests: XCTestCase {
     let store = SemanticModelStore(folder: parent.appending(path: "embeddinggemma-2-coreml"))
     store.remove(imagesOnly: true)
     XCTAssertNil(store.legacyModel())
-  }
-}
-
-@MainActor
-final class AccurateOCRMigrationTests: XCTestCase {
-  func testImageTextIsRecognizedAgainOnce() async throws {
-    let migrations = Defaults[.migrations]
-    defer { Defaults[.migrations] = migrations }
-    Defaults[.migrations]["2026-10-14-accurate-ocr"] = nil
-    let container = try ModelContainer(for: HistoryItem.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
-    let repository = HistoryRepository(context: container.mainContext)
-    let item = HistoryItem()
-    repository.insert(item)
-    item.ocrText = "Pwng customw"
-    item.normalizedOCRText = "pwng customw"
-    item.payloadByteCount = 100
-    item.metadataVersion = 1
-    item.normalizedSearchText = ""
-    try container.mainContext.save()
-    try await HistoryService(repository: repository).load()
-    XCTAssertNil(item.ocrText)
-    XCTAssertNil(item.normalizedOCRText)
-    XCTAssertEqual(item.payloadByteCount, 100 - 24)
-    item.ocrText = "Paying customers"
-    try await HistoryService(repository: repository).load()
-    XCTAssertEqual(item.ocrText, "Paying customers")
   }
 }

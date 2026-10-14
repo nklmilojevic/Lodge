@@ -316,10 +316,17 @@ final class History {
 
   func backfillOCRIfNeeded() {
     guard Defaults[.ocrInImages] else { ocr.cancelAll(); return }
-    for decorator in all where decorator.hasImage && decorator.item.ocrText == nil {
+    for decorator in all where decorator.hasImage &&
+      (decorator.item.ocrText == nil || decorator.item.ocrVersion < HistoryItem.currentOCRVersion) {
       let item = decorator.item
       let fingerprint = item.contentFingerprint
-      ocr.enqueue(id: item.uuid, source: { [weak item] in item?.imageSource }) { [weak self, weak item] result in
+      // Earlier text stays when an image can no longer be read, for example a file that was deleted.
+      let failure: () -> Void = { [weak self, weak item] in
+        guard let self, let item, item.ocrText != nil, item.contentFingerprint == fingerprint else { return }
+        try? self.service.markTextRecognitionAttempted(for: item)
+      }
+      ocr.enqueue(id: item.uuid, source: { [weak item] in item?.imageSource },
+                  failure: failure) { [weak self, weak item] result in
         guard let self, let item, item.contentFingerprint == fingerprint,
               self.service.items.contains(where: { $0.uuid == item.uuid }) else { return }
         do {

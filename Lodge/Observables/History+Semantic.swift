@@ -77,14 +77,16 @@ extension History {
     }
     guard keys != vectorKeys else { return }
     var entries: [(id: UUID, isImage: Bool, vector: [Float])] = []
+    var imageItems = Set<UUID>()
     for (item, data) in stored {
+      if item.hasImageContent { imageItems.insert(item.uuid) }
       let vectors = SemanticVectors.unpackAll(data)
       for (index, modality) in Self.modalities(source: item.embeddingSource, count: vectors.count).enumerated() {
         entries.append((item.uuid, modality, vectors[index]))
       }
     }
     vectorKeys = keys
-    semanticIndex = SemanticIndex(entries)
+    semanticIndex = SemanticIndex(entries, imageItems: imageItems)
     semanticRevision &+= 1
   }
 
