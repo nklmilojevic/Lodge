@@ -181,6 +181,11 @@ final class HistoryService {
     let previousCount = items.count
     let retained = try repository.transaction(updating: [item]) {
       if let text {
+        // A vector made from different text no longer describes the image.
+        if text != item.ocrText, item.embeddingSource.contains("ocr") || item.embedding == nil {
+          item.embedding = nil
+          item.embeddingSource = ""
+        }
         item.ocrText = text
         item.normalizedOCRText = normalizedText
         item.ocrVersion = HistoryItem.currentOCRVersion
@@ -208,13 +213,6 @@ final class HistoryService {
         update.item.embeddingSource = update.source
       }
     }
-  }
-
-  /// Records that the current recognition could not read an image again, so it keeps its earlier text and is not
-  /// tried again.
-  func markTextRecognitionAttempted(for item: HistoryItem) throws {
-    guard items.contains(where: { $0.uuid == item.uuid }), item.ocrVersion < HistoryItem.currentOCRVersion else { return }
-    try repository.transaction(updating: [item]) { item.ocrVersion = HistoryItem.currentOCRVersion }
   }
 
   func sort() { publish(items) }

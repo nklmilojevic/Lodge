@@ -121,7 +121,8 @@ extension History {
         }
         let work = batch.map { item in
           (item: item, fingerprint: item.contentFingerprint, source: self.desiredEmbeddingSource(item, semantic) ?? "",
-           text: String(item.previewableText.prefix(4_000)), image: item.hasImageContent ? item.imageSource : nil)
+           text: String(item.previewableText.prefix(4_000)), image: item.hasImageContent ? item.imageSource : nil,
+           imageText: Self.imageText(item))
         }
         var updates: [(item: HistoryItem, embedding: Data?, source: String)] = []
         do {
@@ -134,9 +135,8 @@ extension History {
                 data += SemanticVectors.pack(try await semantic.embed(image: image))
               }
             } catch SemanticModelError.unreadableImage {}
-            let text = Self.imageText(first.item)
-            if first.source.contains("ocr"), !text.isEmpty {
-              data += SemanticVectors.pack(try await semantic.embed(documents: [String(text.prefix(4_000))])[0])
+            if first.source.contains("ocr"), !first.imageText.isEmpty {
+              data += SemanticVectors.pack(try await semantic.embed(documents: [String(first.imageText.prefix(4_000))])[0])
             }
             updates.append((first.item, data.isEmpty ? nil : data, first.source))
           } else {
@@ -152,8 +152,13 @@ extension History {
           break
         }
         guard !Task.isCancelled else { break }
-        let fingerprints = Dictionary(work.map { ($0.item.uuid, $0.fingerprint) }, uniquingKeysWith: { first, _ in first })
-        let current = updates.filter { fingerprints[$0.item.uuid] == $0.item.contentFingerprint }
+        // Vectors made from content or image text that changed meanwhile are dropped and made again.
+        let snapshots = Dictionary(work.map { ($0.item.uuid, ($0.fingerprint, $0.imageText)) },
+                                   uniquingKeysWith: { first, _ in first })
+        let current = updates.filter { update in
+          guard let snapshot = snapshots[update.item.uuid] else { return false }
+          return snapshot.0 == update.item.contentFingerprint && snapshot.1 == Self.imageText(update.item)
+        }
         do {
           try self.service.setEmbeddings(current)
         } catch {

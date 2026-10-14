@@ -49,8 +49,16 @@ struct AskSearchPlan: Sendable {
     }
     let named = words(request)
     guard let evidence = kindWords[kind], !evidence.isDisjoint(with: named) else { return .any }
-    if kind == .text, let images = kindWords[.image], !images.isDisjoint(with: named) { return .any }
+    if kind == .text, asksForTextInImage(request) { return .any }
     return kind
+  }
+
+  /// "text in screenshot", "words on the image": text inside an image, not text items. "notes about screenshots"
+  /// still asks for notes.
+  private static func asksForTextInImage(_ request: String) -> Bool {
+    let images = (kindWords[.image] ?? []).sorted().joined(separator: "|")
+    let pattern = "\\b(text|texts|words|writing)\\s+(in|inside|on|within|from)\\s+(the\\s+|a\\s+|an\\s+|my\\s+)?(\(images))\\b"
+    return request.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
   }
 
   static func hasEvidence(_ evidence: String?, in query: String) -> Bool {

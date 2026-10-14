@@ -127,6 +127,8 @@ class SearchTests: XCTestCase {
     // Text inside an image is not a request for text items.
     XCTAssertEqual(AskSearchPlan.kind(.text, supportedBy: "text in screenshot", domain: nil), .any)
     XCTAssertEqual(AskSearchPlan.kind(.image, supportedBy: "text in screenshot", domain: nil), .image)
+    XCTAssertEqual(AskSearchPlan.kind(.text, supportedBy: "words on the image", domain: nil), .any)
+    XCTAssertEqual(AskSearchPlan.kind(.text, supportedBy: "notes about screenshots", domain: nil), .text)
   }
 
   func testAskRejectsInvalidDomains() {

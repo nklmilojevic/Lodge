@@ -294,16 +294,44 @@ final class SemanticHistoryTests: XCTestCase {
     XCTAssertEqual(image.item.ocrVersion, HistoryItem.currentOCRVersion)
   }
 
-  func testUnreadableImagesKeepEarlierTextAndAreNotTriedAgain() async throws {
+  func testUnreadableImagesKeepEarlierTextAndAreTriedAgainNextLaunch() async throws {
     Defaults[.ocrInImages] = true
-    makeHistory(imageText: nil)
+    var attempts = 0
+    let ocr = OCRService { _ in attempts += 1; return nil }
+    history = History(repository: HistoryRepository(context: container.mainContext), ocr: ocr,
+                      observePreferences: false, semantic: embedder)
     let image = try addImage()
+    // The first attempt, for a new image without text, does not mark it.
+    for _ in 0..<200 where attempts < 1 { try await Task.sleep(for: .milliseconds(10)) }
+    try await Task.sleep(for: .milliseconds(50))
     image.item.ocrText = "Paying customers"
     image.item.ocrVersion = 0
     history.backfillOCRIfNeeded()
-    for _ in 0..<200 where image.item.ocrVersion == 0 { try await Task.sleep(for: .milliseconds(10)) }
+    for _ in 0..<200 where attempts < 2 { try await Task.sleep(for: .milliseconds(10)) }
+    try await Task.sleep(for: .milliseconds(50))
+    history.backfillOCRIfNeeded()
+    try await Task.sleep(for: .milliseconds(50))
+    // Not tried again in this session, and still marked for the next launch.
+    XCTAssertEqual(attempts, 2)
     XCTAssertEqual(image.item.ocrText, "Paying customers")
-    XCTAssertEqual(image.item.ocrVersion, HistoryItem.currentOCRVersion)
+    XCTAssertEqual(image.item.ocrVersion, 0)
+  }
+
+  func testChangedImageTextReplacesItsVector() async throws {
+    Defaults[.ocrInImages] = true
+    embedder.vectors["Pwng customw"] = FakeEmbedder.vector([6: 1])
+    embedder.vectors["Paying customers"] = FakeEmbedder.vector([7: 1])
+    makeHistory(imageText: "Pwng customw")
+    let image = try addImage()
+    try await waitForImageText(image)
+    XCTAssertEqual(history.semanticIndex.vector(for: image.id)?[6] ?? 0, 1, accuracy: 0.001)
+    try history.service.setImageMetadata(for: image.item, text: "Paying customers", width: 4, height: 4)
+    XCTAssertNil(image.item.embedding)
+    history.backfillEmbeddingsIfNeeded()
+    await history.waitForEmbeddings()
+    history.refreshSearchResults()
+    XCTAssertEqual(image.item.embeddingSource, "ocr1")
+    XCTAssertEqual(history.semanticIndex.vector(for: image.id)?[7] ?? 0, 1, accuracy: 0.001)
   }
 
   func testImageTextIsEmbeddedWithoutTheImageModel() async throws {
