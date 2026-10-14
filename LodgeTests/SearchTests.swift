@@ -108,6 +108,18 @@ class SearchTests: XCTestCase {
     XCTAssertTrue(AskSearchPlan.hasEvidence("yesterday", in: "GitHub links from Brave yesterday"))
   }
 
+  func testAskContentTypeMustBeRequested() {
+    XCTAssertEqual(AskSearchPlan.kind(.text, supportedBy: "paying customers", domain: nil), .any)
+    XCTAssertEqual(AskSearchPlan.kind(.text, supportedBy: "paying customers chart", domain: nil), .any)
+    XCTAssertEqual(AskSearchPlan.kind(.image, supportedBy: "paying customer in image", domain: nil), .image)
+    XCTAssertEqual(AskSearchPlan.kind(.image, supportedBy: "Screenshots with invoice numbers", domain: nil), .image)
+    XCTAssertEqual(AskSearchPlan.kind(.text, supportedBy: "notes about the deploy", domain: nil), .text)
+    XCTAssertEqual(AskSearchPlan.kind(.link, supportedBy: "GitHub links from Brave", domain: nil), .link)
+    XCTAssertEqual(AskSearchPlan.kind(.link, supportedBy: "github stuff", domain: "github.com"), .link)
+    XCTAssertEqual(AskSearchPlan.kind(.link, supportedBy: "recipes", domain: nil), .any)
+    XCTAssertEqual(AskSearchPlan.kind(.any, supportedBy: "image", domain: nil), .any)
+  }
+
   func testAskRejectsInvalidDomains() {
     XCTAssertThrowsError(try AskSearchPlan.domain("https://github.com"))
     XCTAssertThrowsError(try AskSearchPlan.domain("github.com/path"))

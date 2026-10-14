@@ -24,6 +24,22 @@ struct AskSearchPlan: Sendable {
     return host
   }
 
+  private static let kindWords: [Kind: Set<String>] = [
+    .image: ["image", "images", "picture", "pictures", "photo", "photos", "screenshot", "screenshots", "pic", "pics",
+             "png", "jpg", "jpeg", "gif", "heic", "img"],
+    .text: ["text", "texts", "note", "notes", "snippet", "snippets", "paragraph", "paragraphs", "sentence", "sentences"],
+    .link: ["link", "links", "url", "urls", "website", "websites", "site", "sites", "web", "http", "https"]
+  ]
+
+  /// The model sometimes picks a content type the request never asked for, such as text for "paying customers",
+  /// which would hide matching images. A type counts only when the request names it, or names a website for links.
+  static func kind(_ kind: Kind, supportedBy query: String, domain: String?) -> Kind {
+    guard kind != .any else { return .any }
+    if kind == .link && domain != nil { return .link }
+    let words = Set(query.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted))
+    return kindWords[kind].map { !$0.isDisjoint(with: words) } == true ? kind : .any
+  }
+
   static func hasEvidence(_ evidence: String?, in query: String) -> Bool {
     guard let evidence else { return false }
     let phrase = evidence.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -186,7 +202,8 @@ enum AskSearch {
     guard terms.count <= 12, terms.allSatisfy({ $0.count <= 200 }) else { throw AskSearchError.invalidPlan }
     let application = AskSearchPlan.hasEvidence(generated.application, in: query) ? generated.application : nil
     return AskSearchPlan(terms: terms, application: application,
-                         kind: AskSearchPlan.Kind(rawValue: generated.kind.rawValue) ?? .any,
+                         kind: AskSearchPlan.kind(AskSearchPlan.Kind(rawValue: generated.kind.rawValue) ?? .any,
+                                                  supportedBy: query, domain: domain),
                          startDate: start, endDate: end, domain: domain)
   }
 
