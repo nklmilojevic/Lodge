@@ -106,6 +106,7 @@ enum EmbeddingHelper {
 final class EmbeddingHelperClient: @unchecked Sendable {
   private let folder: URL
   private let executable: URL?
+  private let arguments: [String]?
   private let lock = NSLock()
   /// Writes can block when the pipe is full, so they run here, never while holding `lock`, which the reader needs.
   private let writer = DispatchQueue(label: "com.nklmilojevic.Lodge.embedding-helper.writer")
@@ -115,10 +116,11 @@ final class EmbeddingHelperClient: @unchecked Sendable {
   private var nextID = 0
   private var buffer = Data()
 
-  /// `executable` defaults to Lodge's own binary.
-  init(folder: URL, executable: URL? = nil) {
+  /// `executable` and `arguments` default to Lodge's own binary in helper mode.
+  init(folder: URL, executable: URL? = nil, arguments: [String]? = nil) {
     self.folder = folder
     self.executable = executable
+    self.arguments = arguments
     // Writing to a helper that just exited must fail the write, not end Lodge.
     signal(SIGPIPE, SIG_IGN)
   }
@@ -168,7 +170,7 @@ final class EmbeddingHelperClient: @unchecked Sendable {
     let process = Process()
     let standardInput = Pipe(), standardOutput = Pipe()
     process.executableURL = executable
-    process.arguments = [EmbeddingHelper.argument, folder.path]
+    process.arguments = arguments ?? [EmbeddingHelper.argument, folder.path]
     process.standardInput = standardInput
     process.standardOutput = standardOutput
     process.standardError = FileHandle.nullDevice

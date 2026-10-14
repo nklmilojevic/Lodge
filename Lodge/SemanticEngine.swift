@@ -321,6 +321,8 @@ final class SemanticModelStore {
   /// Removes the image model only, or every model file.
   func remove(imagesOnly: Bool) {
     cancel()
+    // Otherwise the next launch would migrate the old model and download this one again.
+    removeLegacyModel()
     SemanticEngine.shared.stop()
     let fileManager = FileManager.default
     for file in SemanticModelFiles.images { try? fileManager.removeItem(at: files.url(for: file.path)) }

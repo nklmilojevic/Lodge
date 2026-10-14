@@ -462,14 +462,21 @@ final class EmbeddingHelperClientTests: XCTestCase {
   }
 
   func testManyLargeRequestsAllGetAnswers() async throws {
-    // More than the pipe buffer in both directions at once. Every request must finish.
-    let client = EmbeddingHelperClient(folder: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString))
+    // cat answers every request line with a reply of the same size while requests are still being written, so
+    // both pipes are far past their buffers at once. Each request must get its own reply, not a helper failure.
+    let client = EmbeddingHelperClient(folder: FileManager.default.temporaryDirectory,
+                                       executable: URL(fileURLWithPath: "/bin/cat"), arguments: ["-u"])
     let answered = await withTaskGroup(of: Bool.self) { group in
       for index in 0..<40 {
         group.addTask {
           var request = EmbeddingRequest(kind: .text)
-          request.texts = [String(repeating: "text \(index) ", count: 2_000)]
-          do { _ = try await client.send(request) } catch SemanticModelError.helper { return true } catch {}
+          request.texts = [String(repeating: "text \(index) ", count: 4_000)]
+          do {
+            _ = try await client.send(request)
+          } catch SemanticModelError.helper(let message) {
+            // The echoed request decodes as a response without vectors.
+            return message == "No response"
+          } catch {}
           return false
         }
       }
@@ -518,7 +525,20 @@ final class SemanticModelStoreTests: XCTestCase {
     }
     store = SemanticModelStore(folder: folder)
     store.migrateLegacyModel()
-    XCTAssertNil(store.legacyModel())
+    // Macs that cannot run the Core ML model keep the old files.
+    XCTAssertEqual(store.legacyModel(), SemanticModelStore.isSupported ? nil : false)
     XCTAssertFalse(store.isBusy)
+  }
+
+  func testRemovingTheModelAlsoRemovesTheLegacyModel() throws {
+    let parent = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: parent) }
+    for name in ["embeddinggemma-2-Q8_0.gguf", "mmproj-embeddinggemma-2-Q8_0.gguf"] {
+      try Data([1]).write(to: parent.appending(path: name))
+    }
+    let store = SemanticModelStore(folder: parent.appending(path: "embeddinggemma-2-coreml"))
+    store.remove(imagesOnly: true)
+    XCTAssertNil(store.legacyModel())
   }
 }
