@@ -2,16 +2,29 @@ import XCTest
 @testable import Lodge
 
 /// Token IDs must match the original Hugging Face tokenizer exactly (scripts/gen-tokenizer-fixtures.py). The
-/// tokenizer file comes from TEST_RUNNER_LODGE_TOKENIZER (CI downloads the pinned file) or the installed model.
+/// tokenizer file comes from LODGE_TOKENIZER or the installed model. xcodebuild passes TEST_RUNNER_LODGE_TOKENIZER to
+/// tests as LODGE_TOKENIZER; both names are read. With LODGE_REQUIRE_TOKENIZER set, as in CI, a missing file fails
+/// the tests instead of skipping them.
 final class GemmaTokenizerTests: XCTestCase {
+  /// Thrown instead of a skip, so the test fails.
+  private struct MissingTokenizer: Error {
+    let path: String
+  }
+
   private static var tokenizer: GemmaTokenizer?
 
   private func tokenizer() throws -> GemmaTokenizer {
     if let tokenizer = Self.tokenizer { return tokenizer }
     let installed = URL.applicationSupportDirectory
       .appending(path: "Lodge/Models/embeddinggemma-2-coreml/\(SemanticModelFiles.tokenizer)")
-    let url = ProcessInfo.processInfo.environment["LODGE_TOKENIZER"].map { URL(fileURLWithPath: $0) } ?? installed
-    try XCTSkipUnless(FileManager.default.fileExists(atPath: url.path), "tokenizer.json is not available.")
+    let environment = ProcessInfo.processInfo.environment
+    let path = environment["LODGE_TOKENIZER"] ?? environment["TEST_RUNNER_LODGE_TOKENIZER"]
+    let url = path.map { URL(fileURLWithPath: $0) } ?? installed
+    let available = FileManager.default.fileExists(atPath: url.path)
+    if environment["LODGE_REQUIRE_TOKENIZER"] != nil || environment["TEST_RUNNER_LODGE_REQUIRE_TOKENIZER"] != nil {
+      guard available else { throw MissingTokenizer(path: url.path) }
+    }
+    try XCTSkipUnless(available, "tokenizer.json is not available.")
     let tokenizer = try GemmaTokenizer(contentsOf: url)
     Self.tokenizer = tokenizer
     return tokenizer

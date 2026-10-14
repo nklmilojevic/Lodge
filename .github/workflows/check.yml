@@ -25,6 +25,7 @@ jobs:
       - name: Build and run unit tests
         env:
           TEST_RUNNER_LODGE_TOKENIZER: ${{ runner.temp }}/tokenizer.json
+          TEST_RUNNER_LODGE_REQUIRE_TOKENIZER: "1"
         run: >-
           xcodebuild -project Lodge.xcodeproj -scheme Lodge
           -configuration Debug -destination 'platform=macOS'
