@@ -79,7 +79,7 @@ class AppState {
     self.history.onResultsChange = { [weak self] selectFirst in
       guard let self else { return }
       if selectFirst || self.history.selectedItem == nil {
-        self.selection = self.history.items.first?.id
+        self.selection = self.history.items.first(where: \.isVisible)?.id
       }
       self.popup.needsResize = true
     }

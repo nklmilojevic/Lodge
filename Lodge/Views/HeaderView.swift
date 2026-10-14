@@ -12,6 +12,11 @@ struct HeaderView: View {
 
   @Default(.showTitle) private var showTitle
 
+  private var askHint: String {
+    guard let message = AskSearch.availabilityMessage else { return "Press Return to search on this Mac." }
+    return appState.history.canSearchByMeaning ? "Press Return to search by meaning on this Mac." : message
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
       HStack {
@@ -49,7 +54,7 @@ struct HeaderView: View {
           if appState.history.isSearching {
             ProgressView().controlSize(.mini)
           }
-          Text(appState.history.askSearchMessage ?? AskSearch.availabilityMessage ?? "Press Return to search on this Mac.")
+          Text(appState.history.askSearchMessage ?? askHint)
             .font(.caption)
             .foregroundStyle(.secondary)
             .lineLimit(2)

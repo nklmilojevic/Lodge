@@ -53,6 +53,14 @@ jobs:
           "$SPARKLE_DIRECTORY/bin/generate_appcast" --help > /dev/null
           echo "SPARKLE_BIN=$SPARKLE_DIRECTORY/bin" >> "$GITHUB_ENV"
 
+      - name: Restore llama.cpp build
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: Packages/LlamaEmbedding/Vendor
+          key: llama-${{ hashFiles('scripts/build-llama.sh', 'scripts/llama.cpp-no-logits.patch') }}
+      - name: Build llama.cpp
+        run: scripts/build-llama.sh
+
       - name: Run unit tests
         run: >-
           xcodebuild -quiet -project Lodge.xcodeproj -scheme Lodge

@@ -56,8 +56,11 @@
 		DA243D142C2F66DD0012A27F /* Storage.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA243D132C2F66DD0012A27F /* Storage.swift */; };
 		DA360DB31E3DF137005C6F6B /* HistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA360DB21E3DF137005C6F6B /* HistoryTests.swift */; };
 		DA384E86232746D800603999 /* SearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA384E85232746D800603999 /* SearchTests.swift */; };
+		5E000000000000000000000A /* SemanticSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E000000000000000000000B /* SemanticSearchTests.swift */; };
+		5E000000000000000000000C /* SemanticModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E000000000000000000000D /* SemanticModelTests.swift */; };
 		DA3BCB8E2C3E015000B01BC1 /* ModifierFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA3BCB8D2C3E015000B01BC1 /* ModifierFlags.swift */; };
 		DA3BCB922C3EEC3C00B01BC1 /* History.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA3BCB912C3EEC3C00B01BC1 /* History.swift */; };
+		5E0000000000000000000005 /* History+Semantic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E0000000000000000000006 /* History+Semantic.swift */; };
 		DA3BCB942C3EECBB00B01BC1 /* HistoryItemDecorator.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA3BCB932C3EECBB00B01BC1 /* HistoryItemDecorator.swift */; };
 		DA3CE8001E44A62500B3AA98 /* ClipboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA3CE7FF1E44A62500B3AA98 /* ClipboardTests.swift */; };
 		DA3EAE0C2AE30F7500F39108 /* NSApplication+Windows.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA3EAE0B2AE30F7500F39108 /* NSApplication+Windows.swift */; };
@@ -119,6 +122,8 @@
 		DAC0CA3E2C88E7A4003BF498 /* Fuse in Frameworks */ = {isa = PBXBuildFile; productRef = DAC0CA3D2C88E7A4003BF498 /* Fuse */; };
 		DAC14124232367B200FCFA30 /* Search.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAC14123232367B200FCFA30 /* Search.swift */; };
 		AB0918202600000000000001 /* AskSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0918202600000000000002 /* AskSearch.swift */; };
+		5E0000000000000000000003 /* SemanticEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E0000000000000000000004 /* SemanticEngine.swift */; };
+		5E0000000000000000000001 /* SemanticSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E0000000000000000000002 /* SemanticSearch.swift */; };
 		DAC929D7297A0E8B00814F19 /* NSPasteboard.PasteboardType+Types.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAC929D6297A0E8B00814F19 /* NSPasteboard.PasteboardType+Types.swift */; };
 		DAD665662898A1C000975096 /* KeyChord.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAD665652898A1C000975096 /* KeyChord.swift */; };
 		DAE28500232257D20080E394 /* ColorImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAE284FF232257D20080E394 /* ColorImage.swift */; };
@@ -137,6 +142,7 @@
 		046B66002DC84C959F3C4E49 /* PerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF206631FD064BBB90E33D03 /* PerformanceTests.swift */; };
 		217A66B838C44E3197938645 /* ThrottlerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0C13670D3374765B4C963B6 /* ThrottlerTests.swift */; };
 		929D361FD8874DF5B1AE5F48 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = 45FC5D8B1E9E4A7390E7FB5B /* SwiftSoup */; };
+		5E0000000000000000000007 /* LlamaEmbedding in Frameworks */ = {isa = PBXBuildFile; productRef = 5E0000000000000000000008 /* LlamaEmbedding */; };
 		D6629085BD6F4C559C8D5ED5 /* Performance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 619B5C83191F48CF9B1B3237 /* Performance.swift */; };
 		860FFAFDB4704A719D60AD16 /* MigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A660FBC3AB5142F8AFC17C3A /* MigrationTests.swift */; };
 /* End PBXBuildFile section */
@@ -251,6 +257,8 @@
 		DA360DB21E3DF137005C6F6B /* HistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; lineEnding = 0; path = HistoryTests.swift; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.swift; };
 		DA360DB41E3DF137005C6F6B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		DA384E85232746D800603999 /* SearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchTests.swift; sourceTree = "<group>"; };
+		5E000000000000000000000B /* SemanticSearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SemanticSearchTests.swift; sourceTree = "<group>"; };
+		5E000000000000000000000D /* SemanticModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SemanticModelTests.swift; sourceTree = "<group>"; };
 		DA3873FA2D09EB7600E7B251 /* be */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = be; path = be.lproj/AdvancedSettings.strings; sourceTree = "<group>"; };
 		DA3873FB2D09EB7600E7B251 /* be */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = be; path = be.lproj/AppearanceSettings.strings; sourceTree = "<group>"; };
 		DA3873FC2D09EB7600E7B251 /* be */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = be; path = be.lproj/GeneralSettings.strings; sourceTree = "<group>"; };
@@ -262,6 +270,7 @@
 		DA3B306D2C2CE46800853E9E /* pt-BR */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "pt-BR"; path = "pt-BR.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		DA3BCB8D2C3E015000B01BC1 /* ModifierFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModifierFlags.swift; sourceTree = "<group>"; };
 		DA3BCB912C3EEC3C00B01BC1 /* History.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = History.swift; sourceTree = "<group>"; };
+		5E0000000000000000000006 /* History+Semantic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "History+Semantic.swift"; sourceTree = "<group>"; };
 		DA3BCB932C3EECBB00B01BC1 /* HistoryItemDecorator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryItemDecorator.swift; sourceTree = "<group>"; };
 		DA3CE7FF1E44A62500B3AA98 /* ClipboardTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ClipboardTests.swift; sourceTree = "<group>"; };
 		DA3EAE0B2AE30F7500F39108 /* NSApplication+Windows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSApplication+Windows.swift"; sourceTree = "<group>"; };
@@ -499,6 +508,8 @@
 		DABDE97E2974706C005B32E9 /* KeyboardLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardLayout.swift; sourceTree = "<group>"; };
 		DAC14123232367B200FCFA30 /* Search.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Search.swift; sourceTree = "<group>"; };
 		AB0918202600000000000002 /* AskSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AskSearch.swift; sourceTree = "<group>"; };
+		5E0000000000000000000004 /* SemanticEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SemanticEngine.swift; sourceTree = "<group>"; };
+		5E0000000000000000000002 /* SemanticSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SemanticSearch.swift; sourceTree = "<group>"; };
 		DAC929D6297A0E8B00814F19 /* NSPasteboard.PasteboardType+Types.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSPasteboard.PasteboardType+Types.swift"; sourceTree = "<group>"; };
 		DACCD5822C93605C00BAD74C /* Lodge.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = Lodge.xctestplan; sourceTree = "<group>"; };
 		DAD665652898A1C000975096 /* KeyChord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyChord.swift; sourceTree = "<group>"; };
@@ -548,6 +559,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				929D361FD8874DF5B1AE5F48 /* SwiftSoup in Frameworks */,
+				5E0000000000000000000007 /* LlamaEmbedding in Frameworks */,
 				2F39CB042AD9A93C00B749FD /* Sparkle in Frameworks */,
 				DA009955256414E60030E697 /* KeyboardShortcuts in Frameworks */,
 				DAC0CA3E2C88E7A4003BF498 /* Fuse in Frameworks */,
@@ -678,6 +690,8 @@
 				DA1EDE422045B35300479723 /* HistoryDecoratorTests.swift */,
 				DAFE2DE8268A9B1B00990986 /* HistoryItemTests.swift */,
 				DA384E85232746D800603999 /* SearchTests.swift */,
+				5E000000000000000000000B /* SemanticSearchTests.swift */,
+				5E000000000000000000000D /* SemanticModelTests.swift */,
 				DA696BD12401EEE900DE80CF /* SorterTests.swift */,
 				DA360DB41E3DF137005C6F6B /* Info.plist */,
 			);
@@ -691,6 +705,7 @@
 				DAA072D82C41C5AD006DDFD2 /* Footer.swift */,
 				DAA072DA2C41C5DD006DDFD2 /* FooterItem.swift */,
 				DA3BCB912C3EEC3C00B01BC1 /* History.swift */,
+				5E0000000000000000000006 /* History+Semantic.swift */,
 				DA3BCB932C3EECBB00B01BC1 /* HistoryItemDecorator.swift */,
 				DA3BCB8D2C3E015000B01BC1 /* ModifierFlags.swift */,
 				DAE8F5D32C43262B00851CA9 /* Popup.swift */,
@@ -788,6 +803,8 @@
 				DA689FC52C1D14F10009B887 /* PopupPosition.swift */,
 				DAC14123232367B200FCFA30 /* Search.swift */,
 				AB0918202600000000000002 /* AskSearch.swift */,
+				5E0000000000000000000004 /* SemanticEngine.swift */,
+				5E0000000000000000000002 /* SemanticSearch.swift */,
 				2F1A79BF2C6DFB7800C98EBD /* SearchVisibility.swift */,
 				DAA5ACC92C1BEE8A00B58513 /* SoftwareUpdater.swift */,
 				DA696BCD240177E800DE80CF /* Sorter.swift */,
@@ -838,6 +855,7 @@
 			name = Lodge;
 			packageProductDependencies = (
 				45FC5D8B1E9E4A7390E7FB5B /* SwiftSoup */,
+				5E0000000000000000000008 /* LlamaEmbedding */,
 				DA5154D72564102900C01004 /* Sauce */,
 				DA009946256414800030E697 /* SwiftHEXColors */,
 				DA009954256414E60030E697 /* KeyboardShortcuts */,
@@ -924,6 +942,7 @@
 				DA13D7CE2C19F8C300FA9E23 /* XCRemoteSwiftPackageReference "Defaults" */,
 				DAC0CA3C2C88E7A4003BF498 /* XCRemoteSwiftPackageReference "fuse-swift" */,
 				2F12271C2E5C932200A1592A /* XCRemoteSwiftPackageReference "swift-log" */,
+				5E0000000000000000000009 /* XCLocalSwiftPackageReference "Packages/LlamaEmbedding" */,
 			);
 			productRefGroup = DAEE38441E3DBEB100DD2966 /* Products */;
 			projectDirPath = "";
@@ -982,6 +1001,8 @@
 				DA1EDE432045B35300479723 /* HistoryDecoratorTests.swift in Sources */,
 				DAE2850223225BD90080E394 /* ColorImageTests.swift in Sources */,
 				DA384E86232746D800603999 /* SearchTests.swift in Sources */,
+				5E000000000000000000000A /* SemanticSearchTests.swift in Sources */,
+				5E000000000000000000000C /* SemanticModelTests.swift in Sources */,
 				DA696BD22401EEE900DE80CF /* SorterTests.swift in Sources */,
 				DA360DB31E3DF137005C6F6B /* HistoryTests.swift in Sources */,
 			);
@@ -1053,6 +1074,7 @@
 				DA49EE7928B594DC002752E0 /* NSRunningApplication+WindowFrame.swift in Sources */,
 				DAA54BFA2C3C951900B7FDD8 /* FloatingPanel.swift in Sources */,
 				DA3BCB922C3EEC3C00B01BC1 /* History.swift in Sources */,
+				5E0000000000000000000005 /* History+Semantic.swift in Sources */,
 				DA689FCA2C1D18890009B887 /* HighlightMatch.swift in Sources */,
 				DA6491B029ABCF2400837D93 /* NSScreen+ForPopup.swift in Sources */,
 				DA81D674252A056B009977BC /* Throttler.swift in Sources */,
@@ -1074,6 +1096,8 @@
 				DAFE2DDA268A521B00990986 /* String+Shortened.swift in Sources */,
 				DAC14124232367B200FCFA30 /* Search.swift in Sources */,
 				AB0918202600000000000001 /* AskSearch.swift in Sources */,
+				5E0000000000000000000003 /* SemanticEngine.swift in Sources */,
+				5E0000000000000000000001 /* SemanticSearch.swift in Sources */,
 				DA0FFA2A2C8D100C00A66C97 /* ModifierFlags+Description.swift in Sources */,
 				DAEE38471E3DBEB100DD2966 /* AppDelegate.swift in Sources */,
 				DAA072DF2C41C63C006DDFD2 /* ConfirmationView.swift in Sources */,
@@ -1753,6 +1777,13 @@
 		};
 /* End XCRemoteSwiftPackageReference section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		5E0000000000000000000009 /* XCLocalSwiftPackageReference "Packages/LlamaEmbedding" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/LlamaEmbedding;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		2F12271D2E5C932200A1592A /* Logging */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -1803,6 +1834,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 278DE858821A4AAAB21C80BD /* XCRemoteSwiftPackageReference "SwiftSoup" */;
 			productName = SwiftSoup;
+		};
+		5E0000000000000000000008 /* LlamaEmbedding */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = LlamaEmbedding;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

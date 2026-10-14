@@ -2,6 +2,7 @@ import SwiftUI
 import Defaults
 import KeyboardShortcuts
 import LaunchAtLogin
+import LlamaEmbedding
 import Settings
 
 struct GeneralSettingsPane: View {
@@ -69,11 +70,18 @@ struct GeneralSettingsPane: View {
         .labelsHidden()
         .frame(width: 180, alignment: .leading)
         if searchMode == .ask {
-          Text(AskSearch.availabilityMessage ?? "Type a request, then press Return. Ask runs on this Mac.")
+          Text(askDescription)
             .font(.caption)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
         }
+      }
+
+      Settings.Section(
+        bottomDivider: true,
+        label: { Text("Meaning:") }
+      ) {
+        SemanticSearchSettings()
       }
 
       Settings.Section(
@@ -117,10 +125,89 @@ struct GeneralSettingsPane: View {
     }
   }
 
+  private var askDescription: String {
+    guard let message = AskSearch.availabilityMessage else {
+      return "Type a request, then press Return. Ask runs on this Mac."
+    }
+    guard SemanticModelStore.shared.capability != .none else { return message }
+    return "Ask searches by meaning. App, date, and website filters require Apple Intelligence."
+  }
+
   private func refreshModifiers(_ sender: Sendable) {
     copyModifier = HistoryItemAction.copy.modifierFlags.description
     pasteModifier = HistoryItemAction.paste.modifierFlags.description
     pasteWithoutFormatting = HistoryItemAction.pasteWithoutFormatting.modifierFlags.description
+  }
+}
+
+/// Downloads and removes the EmbeddingGemma 2 model and shows indexing progress.
+private struct SemanticSearchSettings: View {
+  @State private var store = SemanticModelStore.shared
+  @Default(.groupSimilarItems) private var groupSimilarItems
+
+  private func size(_ bytes: Int64) -> String { ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file) }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      if !SemanticModelStore.isSupported {
+        caption("Semantic search requires a Mac with Apple silicon.")
+      } else {
+        caption("Find items by meaning with EmbeddingGemma 2. The model runs on this Mac and sends nothing anywhere.")
+        status
+        if !store.isBusy { actions }
+        Toggle("Group similar copies", isOn: $groupSimilarItems)
+          .disabled(!store.textInstalled)
+        caption("Ask ranks results by meaning. The preview lists similar versions and related items.")
+      }
+    }
+  }
+
+  @ViewBuilder private var status: some View {
+    switch store.phase {
+    case .downloading(let fraction):
+      HStack {
+        ProgressView(value: fraction).frame(width: 180)
+        Button("Cancel") { store.cancel() }
+      }
+    case .verifying:
+      HStack {
+        ProgressView().controlSize(.small)
+        caption("Verifying the download…")
+      }
+    case .failed(let message):
+      Text(message).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+    case .idle:
+      EmptyView()
+    }
+  }
+
+  @ViewBuilder private var actions: some View {
+    let text = EmbeddingModelFiles.text.bytes, media = EmbeddingModelFiles.media.bytes
+    if !store.textInstalled {
+      HStack {
+        Button("Download (\(size(text)))") { store.install(images: false) }
+        Button("Download with images (\(size(text + media)))") { store.install(images: true) }
+      }
+    } else {
+      HStack {
+        if store.imagesInstalled {
+          Button("Remove image search") { store.remove(imagesOnly: true) }
+        } else {
+          Button("Add image search (\(size(media)))") { store.install(images: true) }
+        }
+        Button("Remove model") { store.remove(imagesOnly: false) }
+      }
+      let progress = AppState.shared.history.semanticProgress
+      caption("\(progress.indexed) of \(progress.total) items indexed."
+              + (progress.unreadable > 0 ? " \(progress.unreadable) could not be read." : ""))
+    }
+  }
+
+  private func caption(_ text: String) -> some View {
+    Text(text)
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
   }
 }
 

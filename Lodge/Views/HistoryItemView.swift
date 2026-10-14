@@ -28,6 +28,16 @@ struct HistoryItemView: View {
         .truncationMode(.middle)
         .accessibilityIdentifier("copy-history-item")
       Spacer(minLength: 0)
+      if item.similarCount > 0 {
+        Text("+\(item.similarCount)")
+          .font(.caption2.monospacedDigit())
+          .foregroundStyle(.secondary)
+          .padding(.horizontal, 5)
+          .padding(.vertical, 1)
+          .background(.quaternary, in: Capsule())
+          .help("Similar copies are grouped under this item")
+          .accessibilityLabel("\(item.similarCount) similar copies")
+      }
       if item.isPinned {
         Image(systemName: "pin.fill")
           .font(.caption)

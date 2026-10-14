@@ -9,11 +9,17 @@ Lodge is a lightweight clipboard manager for macOS written in Swift/SwiftUI. It 
 ## Build Commands
 
 ```bash
+# Build llama.cpp for semantic search (required once before building; skipped when current)
+scripts/build-llama.sh
+
 # Build the project
 xcodebuild -scheme Lodge -configuration Debug
 
 # Run all tests
 xcodebuild test -scheme Lodge
+
+# Embedding package tests (model tests skip unless the model is installed)
+swift test --package-path Packages/LlamaEmbedding
 
 # Open in Xcode
 open Lodge.xcodeproj
@@ -54,6 +60,7 @@ unit tests only. Keep `Package.resolved` in version control.
 - **HistoryService** (`HistoryService.swift`): History operations, duplicate detection, and retention
 - **ImageProcessingService** (`ImageProcessingService.swift`): Bounded thumbnail cache and OCR workers
 - **Search** (`Search.swift`): Multi-mode search (exact, fuzzy via Fuse, regex, mixed)
+- **Semantic search** (`SemanticSearch.swift`, `SemanticEngine.swift`, `History+Semantic.swift`): On-device vectors for Ask ranking, image search, related items, and grouping of near-duplicates
 - **FloatingPanel** (`FloatingPanel.swift`): Custom non-activating NSPanel for the popup UI
 - **Settings panes** (`Settings/`): General, Appearance, Storage, Pins, Ignore, Advanced
 
@@ -69,6 +76,7 @@ Uses Swift's `@Observable` macro pattern. Views observe singleton state objects 
 - `Sparkle`: Auto-updates
 - `Sauce`: Keyboard utilities
 - `SwiftSoup`: Local HTML text extraction without remote resource loading
+- `LlamaEmbedding` (local package in `Packages/LlamaEmbedding`): EmbeddingGemma 2 on llama.cpp for semantic search
 
 See [docs/architecture.md](docs/architecture.md) for transaction rules, task
 limits, migration behavior, and performance checks.

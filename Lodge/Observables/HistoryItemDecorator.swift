@@ -13,6 +13,8 @@ final class HistoryItemDecorator: Identifiable, Hashable {
   var title: String
   var attributedTitle: AttributedString?
   var isVisible = true
+  /// Older near-duplicates grouped under this item.
+  var similarCount = 0
   var isSelected = false
   var shortcuts: [KeyShortcut] = []
   var applicationImage: ApplicationImage
