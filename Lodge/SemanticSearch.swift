@@ -81,6 +81,13 @@ struct SemanticIndex: Sendable {
     return result
   }
 
+  /// Typical query cosine level with EmbeddingGemma 2, for text and images alike: unrelated items scored 0.48–0.66,
+  /// matches 0.73–0.86. A small history cannot reach z = 2 (the maximum is √(count − 1)), so below
+  /// `referenceMinimum` items each score is also measured against this reference and the larger z counts.
+  static let referenceMean = 0.60
+  static let referenceDeviation = 0.045
+  static let referenceMinimum = 20
+
   /// How far each item stands out for this query, in standard deviations. Text and image vectors sit at different
   /// levels for the same query, so each modality is centered on its own mean first. Modalities with fewer than 20
   /// vectors use the overall mean. Adapted from DigUp (https://github.com/ARahim3/DigUp), MIT License.
@@ -103,8 +110,11 @@ struct SemanticIndex: Sendable {
     let variance = centered.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(centered.count)
     let deviation = max(variance.squareRoot(), 0.02)
     var result: [UUID: (z: Double, cosine: Float)] = [:]
+    let small = included.count < Self.referenceMinimum
     for (offset, row) in included.enumerated() {
-      result[ids[row]] = ((centered[offset] - mean) / deviation, scores[row])
+      var z = (centered[offset] - mean) / deviation
+      if small { z = max(z, (Double(scores[row]) - Self.referenceMean) / Self.referenceDeviation) }
+      result[ids[row]] = (z, scores[row])
     }
     return result
   }

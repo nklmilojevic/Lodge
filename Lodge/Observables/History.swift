@@ -60,11 +60,14 @@ final class History {
   @ObservationIgnored var embeddingGeneration: UInt64 = 0
   @ObservationIgnored var embeddingFailed = false
   @ObservationIgnored var groupCache: (revision: UInt64, order: [UUID], heads: [UUID: UUID])?
+  @ObservationIgnored var groupTask: Task<Void, Never>?
+  @ObservationIgnored var pendingGroups: (revision: UInt64, order: [UUID])?
+  @ObservationIgnored let semanticRefreshThrottler = Throttler(minimumDelay: 0.5)
   @ObservationIgnored var neighborCache: (id: UUID, revision: UInt64, versions: [UUID], related: [UUID])?
   @ObservationIgnored private var askSemanticText: String?
   @ObservationIgnored private let search = Search()
   @ObservationIgnored private let makeSearchPlan: @MainActor (String) async throws -> AskSearchPlan
-  @ObservationIgnored private var completedAskQuery: String?
+  @ObservationIgnored private(set) var completedAskQuery: String?
   @ObservationIgnored private var askPlan: AskSearchPlan?
   @ObservationIgnored private var isPlanningAsk = false
   @ObservationIgnored private let ocrSearchThrottler = Throttler(minimumDelay: 0.1)
@@ -249,6 +252,8 @@ final class History {
     cancelCopies()
     ocr.cancelAll()
     embeddingTask?.cancel()
+    groupTask?.cancel()
+    semanticRefreshThrottler.cancel()
   }
 
   func report(_ message: String) {

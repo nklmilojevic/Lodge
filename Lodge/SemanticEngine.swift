@@ -107,7 +107,10 @@ final class SemanticModelStore {
           }
           self.download = download
           let temporary = try await download.start()
-          try Task.checkCancellation()
+          guard !Task.isCancelled else {
+            try? FileManager.default.removeItem(at: temporary)
+            throw CancellationError()
+          }
           self.phase = .verifying
           let destination = self.folder.appending(path: file.name)
           try await Task.detached(priority: .utility) {

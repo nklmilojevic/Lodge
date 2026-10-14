@@ -147,10 +147,18 @@ extension History {
           break
         }
         self.rebuildSemanticIndex()
-        if Defaults[.groupSimilarItems] && self.searchQuery.isEmpty { self.applySearch(selectFirst: false) }
+        self.refreshForNewVectors()
       }
       if let self, self.embeddingGeneration == generation { self.embeddingTask = nil }
     }
+  }
+
+  /// New vectors can change grouping and the results of a completed Ask search. Selection is kept.
+  func refreshForNewVectors() {
+    let asked = Defaults[.searchMode] == .ask && !searchQuery.isEmpty && completedAskQuery == searchQuery
+    let grouped = Defaults[.groupSimilarItems] && searchQuery.isEmpty
+    guard asked || grouped else { return }
+    semanticRefreshThrottler.throttle { [weak self] in self?.applySearch(selectFirst: false) }
   }
 
   func needsEmbedding(_ item: HistoryItem, _ semantic: SemanticEmbedder) -> Bool {
@@ -158,26 +166,50 @@ extension History {
     return item.embeddingSource != desired
   }
 
-  /// Hides older near-duplicates of an unpinned item when grouping is on and no search is active.
+  /// Hides older near-duplicates of an unpinned item when grouping is on and no search is active. The newest copy
+  /// leads each group whatever the list order. Groups are computed off the main actor; until a result for the current
+  /// vectors arrives, the previous groups stay applied.
   func applyGrouping() {
     let grouping = Defaults[.groupSimilarItems] && searchQuery.isEmpty && semanticIndex.count > 1
     var heads: [UUID: UUID] = [:]
     if grouping {
-      let order = all.filter(\.isUnpinned).map(\.id)
-      if let cache = groupCache, cache.revision == semanticRevision, cache.order == order {
-        heads = cache.heads
+      let order = all.filter(\.isUnpinned).sorted { $0.item.lastCopiedAt > $1.item.lastCopiedAt }.map(\.id)
+      if let cache = groupCache {
+        let current = Set(order)
+        heads = cache.heads.filter { current.contains($0.key) && current.contains($0.value) }
+        if cache.revision != semanticRevision || cache.order != order { computeGroups(order) }
       } else {
-        heads = SemanticRanking.groups(order, in: semanticIndex)
-        groupCache = (semanticRevision, order, heads)
+        computeGroups(order)
       }
     }
     var counts: [UUID: Int] = [:]
     for head in heads.values { counts[head, default: 0] += 1 }
     for item in all {
-      let visible = heads[item.id] == nil
+      let visible = heads[item.id] == nil || item.isPinned
       if item.isVisible != visible { item.isVisible = visible }
       let count = counts[item.id] ?? 0
       if item.similarCount != count { item.similarCount = count }
+    }
+  }
+
+  func waitForGroups() async {
+    while let task = groupTask, !task.isCancelled { await task.value }
+  }
+
+  private func computeGroups(_ order: [UUID]) {
+    let revision = semanticRevision
+    if let pendingGroups, pendingGroups.revision == revision, pendingGroups.order == order { return }
+    pendingGroups = (revision, order)
+    let index = semanticIndex
+    groupTask?.cancel()
+    groupTask = Task { [weak self] in
+      let heads = await Task.detached(priority: .utility) { SemanticRanking.groups(order, in: index) }.value
+      guard let self, !Task.isCancelled else { return }
+      self.groupTask = nil
+      self.pendingGroups = nil
+      guard revision == self.semanticRevision else { return }
+      self.groupCache = (revision, order, heads)
+      self.applySearch(selectFirst: false)
     }
   }
 }

@@ -76,6 +76,22 @@ final class SemanticRankingTests: XCTestCase {
     XCTAssertEqual(index.meaning(FakeEmbedder.vector([0: 1]), excluding: ids[3]).count, 11)
   }
 
+  func testSmallHistoriesUseTheReferenceLevel() {
+    // Cosines like EmbeddingGemma 2's: a match at 0.8, unrelated items near 0.6.
+    let ids = ids(3)
+    let query = FakeEmbedder.vector([0: 1])
+    let entries: [(id: UUID, isImage: Bool, vector: [Float])] = [
+      (ids[0], true, FakeEmbedder.vector([0: 0.8, 10: 0.6])),
+      (ids[1], false, FakeEmbedder.vector([0: 0.6, 11: 0.8])),
+      (ids[2], false, FakeEmbedder.vector([0: 0.62, 12: 0.78]))
+    ]
+    let meaning = SemanticIndex(entries).meaning(query)
+    XCTAssertGreaterThan(meaning[ids[0]]!.z, SemanticRanking.meaningGate)
+    XCTAssertLessThan(meaning[ids[1]]!.z, SemanticRanking.meaningGate)
+    XCTAssertLessThan(meaning[ids[2]]!.z, SemanticRanking.meaningGate)
+    XCTAssertEqual(SemanticIndex([entries[0]]).meaning(query)[ids[0]]!.z, (0.8 - 0.6) / 0.045, accuracy: 0.01)
+  }
+
   func testImageScoresAreCenteredOnTheirOwnModality() {
     // Image vectors sit higher for this query, but only the one that stands out among images should pass.
     var entries: [(id: UUID, isImage: Bool, vector: [Float])] = []
@@ -278,6 +294,7 @@ final class SemanticHistoryTests: XCTestCase {
     XCTAssertEqual(history.visibleUnpinnedItems.count, 3)
     Defaults[.groupSimilarItems] = true
     history.refreshSearchResults()
+    await history.waitForGroups()
     XCTAssertEqual(history.visibleUnpinnedItems.map(\.id), [newer.id, other.id])
     XCTAssertEqual(newer.similarCount, 1)
     XCTAssertNil(history.item(withId: older.id))
@@ -289,6 +306,46 @@ final class SemanticHistoryTests: XCTestCase {
     XCTAssertEqual(newer.similarCount, 0)
   }
 
+  func testTheNewestCopyLeadsItsGroupInAnySortOrder() async throws {
+    Defaults[.sortBy] = .numberOfCopies
+    Defaults[.groupSimilarItems] = true
+    embedder.vectors["Meeting moved to Thursday"] = FakeEmbedder.vector([0: 1, 1: 0.05])
+    embedder.vectors["Meeting moved to Friday"] = FakeEmbedder.vector([0: 1, 2: 0.05])
+    let older = try add("Meeting moved to Thursday")
+    try add("Meeting moved to Thursday")
+    let newer = try add("Meeting moved to Friday")
+    await history.waitForEmbeddings()
+    history.refreshSearchResults()
+    await history.waitForGroups()
+    XCTAssertEqual(history.visibleUnpinnedItems.map(\.id), [newer.id])
+    XCTAssertFalse(older.isVisible)
+  }
+
+  func testAskFindsMeaningInASmallHistory() async throws {
+    embedder.vectors["2 cups flour, 3 eggs"] = FakeEmbedder.vector([0: 0.8, 1: 0.6])
+    embedder.vectors["kubectl get pods"] = FakeEmbedder.vector([0: 0.6, 2: 0.8])
+    embedder.vectors["cake recipe"] = FakeEmbedder.vector([0: 1])
+    let recipe = try add("2 cups flour, 3 eggs")
+    try add("kubectl get pods")
+    await history.waitForEmbeddings()
+    await ask("cake recipe")
+    XCTAssertEqual(history.items.map(\.id), [recipe.id])
+  }
+
+  func testCompletedAskRefreshesWhenNewVectorsArrive() async throws {
+    embedder.vectors["port 3000 is already in use"] = FakeEmbedder.vector([0: 1])
+    embedder.vectors["server will not start"] = FakeEmbedder.vector([0: 0.9, 3: 0.3])
+    try addFiller()
+    await history.waitForEmbeddings()
+    await ask("server will not start")
+    XCTAssertTrue(history.items.isEmpty)
+    let item = try add("port 3000 is already in use")
+    await history.waitForEmbeddings()
+    while history.items.isEmpty { try await Task.sleep(for: .milliseconds(20)); await history.waitForSearch() }
+    XCTAssertEqual(history.items.first?.id, item.id)
+    XCTAssertFalse(history.submitAskIfNeeded())
+  }
+
   func testPinnedItemsAreNeverGrouped() async throws {
     Defaults[.groupSimilarItems] = true
     embedder.vectors["note one"] = FakeEmbedder.vector([0: 1, 1: 0.05])
@@ -298,6 +355,7 @@ final class SemanticHistoryTests: XCTestCase {
     history.togglePin(first)
     await history.waitForEmbeddings()
     history.refreshSearchResults()
+    await history.waitForGroups()
     XCTAssertTrue(first.isVisible)
     XCTAssertEqual(history.visibleUnpinnedItems.count + history.visiblePinnedItems.count, 2)
   }
