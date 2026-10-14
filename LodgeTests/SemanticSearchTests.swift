@@ -455,8 +455,8 @@ final class EmbeddingHelperClientTests: XCTestCase {
       do {
         _ = try await client.send(EmbeddingRequest(kind: .prepare))
         XCTFail("The request should fail")
-      } catch let error as SemanticModelError {
-        XCTAssertEqual(error, .helper("The embedding helper stopped."))
+      } catch SemanticModelError.helper {
+        // Either the write to the exited helper fails, or its termination fails the pending request.
       }
     }
   }
@@ -481,17 +481,24 @@ final class EmbeddingHelperClientTests: XCTestCase {
 
 @MainActor
 final class SemanticModelStoreTests: XCTestCase {
-  func testLegacyModelFilesAreRemovedWithTheirImageChoice() throws {
+  func testLegacyModelStaysUntilTheReplacementIsInstalled() throws {
     let parent = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: parent) }
-    let store = SemanticModelStore(folder: parent.appending(path: "embeddinggemma-2-coreml"))
-    XCTAssertNil(store.removeLegacyModel())
-    for name in ["embeddinggemma-2-Q8_0.gguf", "mmproj-embeddinggemma-2-Q8_0.gguf"] {
-      try Data([1]).write(to: parent.appending(path: name))
+    let folder = parent.appending(path: "embeddinggemma-2-coreml")
+    var store = SemanticModelStore(folder: folder)
+    XCTAssertNil(store.legacyModel())
+    try Data([1]).write(to: parent.appending(path: "embeddinggemma-2-Q8_0.gguf"))
+    XCTAssertEqual(store.legacyModel(), false)
+    // With the replacement text model in place, migration removes the old files without downloading.
+    for file in SemanticModelFiles.text {
+      let url = folder.appending(path: file.path)
+      try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+      try Data([1]).write(to: url)
     }
-    XCTAssertEqual(store.removeLegacyModel(), true)
-    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: parent.path), [])
-    XCTAssertEqual(store.capability, .none)
+    store = SemanticModelStore(folder: folder)
+    store.migrateLegacyModel()
+    XCTAssertNil(store.legacyModel())
+    XCTAssertFalse(store.isBusy)
   }
 }

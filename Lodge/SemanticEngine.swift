@@ -163,22 +163,32 @@ final class SemanticModelStore {
     imagesInstalled = textInstalled && files.installed(SemanticModelFiles.images)
   }
 
-  /// Lodge 2.1 used llama.cpp GGUF files beside this model's folder. Removes them and, because the user opted in
-  /// then, downloads the Core ML model with the same image choice.
+  /// Lodge 2.1 used llama.cpp GGUF files beside this model's folder. Because the user opted in then, this downloads
+  /// the Core ML model with the same image choice. The old files stay until the replacement is installed, so a failed
+  /// download is retried at the next launch, and they stay on Macs that cannot run the Core ML model.
   func migrateLegacyModel() {
-    if let images = removeLegacyModel() { install(images: images) }
+    guard Self.isSupported, let images = legacyModel() else { return }
+    if textInstalled && (imagesInstalled || !images) {
+      removeLegacyModel()
+    } else {
+      install(images: images)
+    }
   }
 
-  /// Returns whether the removed legacy model included images, or nil when there was none.
-  func removeLegacyModel() -> Bool? {
+  /// Whether a legacy model is installed with images, or nil when there is none.
+  func legacyModel() -> Bool? {
+    guard FileManager.default.fileExists(atPath: legacyFiles.text.path) else { return nil }
+    return FileManager.default.fileExists(atPath: legacyFiles.media.path)
+  }
+
+  func removeLegacyModel() {
+    try? FileManager.default.removeItem(at: legacyFiles.text)
+    try? FileManager.default.removeItem(at: legacyFiles.media)
+  }
+
+  private var legacyFiles: (text: URL, media: URL) {
     let legacy = folder.deletingLastPathComponent()
-    let text = legacy.appending(path: "embeddinggemma-2-Q8_0.gguf")
-    let media = legacy.appending(path: "mmproj-embeddinggemma-2-Q8_0.gguf")
-    guard FileManager.default.fileExists(atPath: text.path) else { return nil }
-    let images = FileManager.default.fileExists(atPath: media.path)
-    try? FileManager.default.removeItem(at: text)
-    try? FileManager.default.removeItem(at: media)
-    return images
+    return (legacy.appending(path: "embeddinggemma-2-Q8_0.gguf"), legacy.appending(path: "mmproj-embeddinggemma-2-Q8_0.gguf"))
   }
 
   /// Downloads the text model, and the image model when `images` is true.
@@ -287,6 +297,7 @@ final class SemanticModelStore {
 
   private func finishInstall(generation: UInt64, outcome: Phase) {
     refresh()
+    if let images = legacyModel(), textInstalled, imagesInstalled || !images { removeLegacyModel() }
     // A cancel, removal, or newer install owns the state now.
     guard generation == installGeneration else { return }
     phase = outcome
@@ -447,7 +458,9 @@ final class SemanticEngine: SemanticEmbedder {
     switch image {
     case .file(let url): request.path = url.path
     case .data(let data):
-      // Image data goes through a private temporary file rather than the pipe.
+      // Image data goes through a private temporary file rather than the pipe. The helper reads it as data, so
+      // the size limit for file sources does not apply.
+      request.ownedFile = true
       let url = FileManager.default.temporaryDirectory.appending(path: "LodgeEmbedding-\(UUID().uuidString)")
       try data.write(to: url, options: .atomic)
       temporary = url

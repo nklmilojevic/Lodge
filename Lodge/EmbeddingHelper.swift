@@ -12,6 +12,8 @@ struct EmbeddingRequest: Codable, Sendable {
   var kind: Kind
   var texts: [String]?
   var path: String?
+  /// A temporary file Lodge wrote from image data. It is decoded as data, without the file-source size limit.
+  var ownedFile: Bool?
 }
 
 /// One response per line from the helper. Vectors are float32 bytes.
@@ -70,7 +72,9 @@ enum EmbeddingHelper {
             vectors = try await model.embed(texts: request.texts ?? [])
           case .image:
             guard let path = request.path else { throw SemanticModelError.unreadableImage }
-            vectors = [try await model.embed(image: .file(URL(fileURLWithPath: path)))]
+            let url = URL(fileURLWithPath: path)
+            let source: ImageSource = request.ownedFile == true ? .data(try Data(contentsOf: url)) : .file(url)
+            vectors = [try await model.embed(image: source)]
           }
           response.vectors = vectors.map { $0.withUnsafeBufferPointer { Data(buffer: $0) } }
         } catch SemanticModelError.unreadableImage {
@@ -142,7 +146,11 @@ final class EmbeddingHelperClient: @unchecked Sendable {
   }
 
   func stop() {
-    lock.withLock { process }?.terminate()
+    // terminate() raises an exception for a process that has already exited, for example after its idle timeout.
+    lock.withLock {
+      guard let process, process.isRunning else { return }
+      process.terminate()
+    }
   }
 
   /// Called with the lock held.
