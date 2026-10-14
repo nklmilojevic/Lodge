@@ -21,6 +21,19 @@ class About {
     return string
   }
 
+  private var semanticCredits: NSMutableAttributedString {
+    let text = "Semantic search uses EmbeddingGemma 2, llama.cpp, and code adapted from DigUp."
+    let string = NSMutableAttributedString(string: text,
+                                           attributes: [NSAttributedString.Key.foregroundColor: NSColor.labelColor])
+    let links = [("EmbeddingGemma 2", "https://huggingface.co/google/embeddinggemma-2"),
+                 ("llama.cpp", "https://github.com/ggml-org/llama.cpp"),
+                 ("DigUp", "https://github.com/ARahim3/DigUp")]
+    for (name, url) in links {
+      string.addAttribute(.link, value: url, range: (text as NSString).range(of: name))
+    }
+    return string
+  }
+
   private var credits: NSMutableAttributedString {
     let credits = NSMutableAttributedString(string: "",
                                             attributes: [NSAttributedString.Key.foregroundColor: NSColor.labelColor])
@@ -29,6 +42,8 @@ class About {
     credits.append(kossCredits)
     credits.append(NSAttributedString(string: "\n"))
     credits.append(familyCredits)
+    credits.append(NSAttributedString(string: "\n\n"))
+    credits.append(semanticCredits)
     credits.setAlignment(.center, range: NSRange(location: 0, length: credits.length))
     return credits
   }

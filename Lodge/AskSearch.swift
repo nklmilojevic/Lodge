@@ -50,6 +50,11 @@ struct AskSearchPlan: Sendable {
   }
 
   func matches(_ document: AskSearchDocument, ocr: Bool) -> Bool {
+    passesFilters(document) && coverage(document, ocr: ocr) == 1
+  }
+
+  /// Checks the app, date, type, and website filters.
+  func passesFilters(_ document: AskSearchDocument) -> Bool {
     if let application, !application.isEmpty {
       let source = ContentProcessor.normalize(document.application)
       guard source.contains(ContentProcessor.normalize(application)) else { return false }
@@ -63,12 +68,19 @@ struct AskSearchPlan: Sendable {
     case .text: if document.hasImage || document.text.isEmpty { return false }
     case .link: break
     }
+    return true
+  }
+
+  /// The share of terms found in the item text, or in image text when `ocr` is true. Without terms, 1.
+  func coverage(_ document: AskSearchDocument, ocr: Bool) -> Double {
+    guard !terms.isEmpty else { return 1 }
     let text = ContentProcessor.normalize(document.title + "\n" + document.text)
     let imageText = ocr ? ContentProcessor.normalize(document.ocr) : ""
-    return terms.allSatisfy {
+    let found = terms.filter {
       let term = ContentProcessor.normalize($0)
       return text.contains(term) || imageText.contains(term)
     }
+    return Double(found.count) / Double(terms.count)
   }
 
   private func hasMatchingLink(_ document: AskSearchDocument) -> Bool {
@@ -206,8 +218,11 @@ enum AskSearch {
     return (start, end)
   }
 
+  /// With `meaning`, items that pass the filters are ranked by meaning and term coverage together.
+  /// Without it, every term must appear and the history order is kept.
   @MainActor
-  static func search(_ plan: AskSearchPlan, within items: [HistoryItemDecorator], ocr: Bool) async -> [Search.SearchResult] {
+  static func search(_ plan: AskSearchPlan, within items: [HistoryItemDecorator], ocr: Bool,
+                     meaning: [UUID: Double]? = nil) async -> [Search.SearchResult] {
     let needsLinks = plan.kind == .link || plan.domain != nil
     let documents = items.map {
       AskSearchDocument(id: $0.id, title: $0.title, text: $0.searchableText, ocr: $0.ocrText,
@@ -215,15 +230,25 @@ enum AskSearch {
                         copiedAt: $0.item.lastCopiedAt, hasImage: $0.hasImage,
                         linkContents: needsLinks ? $0.item.linkSnapshots : [])
     }
-    let worker = Task.detached(priority: .userInitiated) {
-      documents.compactMap { document -> UUID? in
-        guard !Task.isCancelled, plan.matches(document, ocr: ocr) else { return nil }
-        return document.id
+    let worker = Task.detached(priority: .userInitiated) { () -> [UUID] in
+      guard let meaning else {
+        return documents.compactMap { document -> UUID? in
+          guard !Task.isCancelled, plan.matches(document, ocr: ocr) else { return nil }
+          return document.id
+        }
       }
+      var eligible: [UUID] = []
+      var coverage: [UUID: Double] = [:]
+      for document in documents where !Task.isCancelled && plan.passesFilters(document) {
+        eligible.append(document.id)
+        coverage[document.id] = plan.terms.isEmpty ? 0 : plan.coverage(document, ocr: ocr)
+      }
+      return SemanticRanking.rank(eligible, meaning: meaning, coverage: coverage,
+                                  lookup: SemanticRanking.isLookup(plan.terms))
     }
     let ids = await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
-    let matches = Set(ids)
-    return items.filter { matches.contains($0.id) }.map { Search.SearchResult(object: $0) }
+    let byID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+    return ids.compactMap { byID[$0] }.map { Search.SearchResult(object: $0) }
   }
 }
 

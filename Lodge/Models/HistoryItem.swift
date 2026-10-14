@@ -55,6 +55,9 @@ class HistoryItem {
   var title = ""
   var ocrText: String?
   var contentFingerprint = ""
+  // A 768-value float16 vector for semantic search, and what produced it, such as "text1".
+  var embedding: Data?
+  var embeddingSource = ""
 
   // Pre-computed text statistics stored in database to avoid on-demand calculation
   var characterCount: Int = 0
@@ -88,6 +91,8 @@ class HistoryItem {
     let title = title
     let ocrText = ocrText
     let contentFingerprint = contentFingerprint
+    let embedding = embedding
+    let embeddingSource = embeddingSource
     let characterCount = characterCount
     let wordCount = wordCount
     let searchText = searchText
@@ -110,6 +115,8 @@ class HistoryItem {
       self.title = title
       self.ocrText = ocrText
       self.contentFingerprint = contentFingerprint
+      self.embedding = embedding
+      self.embeddingSource = embeddingSource
       self.characterCount = characterCount
       self.wordCount = wordCount
       self.searchText = searchText
@@ -142,6 +149,8 @@ class HistoryItem {
     wordCount = prepared.wordCount
     payloadByteCount = prepared.byteCount
     metadataVersion = 1
+    embedding = nil
+    embeddingSource = ""
     for (content, digest) in zip(contents, prepared.fingerprints) {
       content.fingerprint = digest
     }

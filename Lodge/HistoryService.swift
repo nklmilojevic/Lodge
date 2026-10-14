@@ -195,6 +195,20 @@ final class HistoryService {
     return retained.count != previousCount
   }
 
+  /// Stores semantic vectors in one save. Like SQLite indexes, vectors are derived data: they do not count toward
+  /// the history data limit, so a background save never removes history.
+  func setEmbeddings(_ updates: [(item: HistoryItem, embedding: Data?, source: String)]) throws {
+    let current = Set(items.map(\.uuid))
+    let updates = updates.filter { current.contains($0.item.uuid) }
+    guard !updates.isEmpty else { return }
+    try repository.transaction(updating: updates.map(\.item)) {
+      for update in updates {
+        update.item.embedding = update.embedding
+        update.item.embeddingSource = update.source
+      }
+    }
+  }
+
   func sort() { publish(items) }
 
   private func match(_ prepared: PreparedCopy) -> HistoryItem? {

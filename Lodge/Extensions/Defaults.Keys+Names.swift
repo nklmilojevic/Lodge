@@ -50,6 +50,7 @@ extension Defaults.Keys {
   static let popupPosition = Key<PopupPosition>("popupPosition", default: .center, suite: AppPreferences.suite)
 
   static let popupScreen = Key<Int>("popupScreen", default: 0, suite: AppPreferences.suite)
+  static let groupSimilarItems = Key<Bool>("groupSimilarItems", default: false, suite: AppPreferences.suite)
   static let ocrInImages = Key<Bool>("ocrInImages", default: true, suite: AppPreferences.suite)
   static let previewDelay = Key<Int>("previewDelay", default: 1500, suite: AppPreferences.suite)
   static let removeFormattingByDefault = Key<Bool>("removeFormattingByDefault", default: false, suite: AppPreferences.suite)

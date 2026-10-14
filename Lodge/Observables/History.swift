@@ -15,6 +15,8 @@ final class History {
   private(set) var askSearchMessage: String?
   private(set) var isSearching = false
   private(set) var isLoaded = false
+  /// Changes when stored semantic vectors change.
+  var semanticRevision: UInt64 = 0
   var errorMessage: String?
   let temporaryStorage: Bool
   var selectedItem: HistoryItemDecorator? {
@@ -44,11 +46,22 @@ final class History {
       guard searchQuery != oldValue else { return }
       completedAskQuery = nil
       askPlan = nil
+      askSemanticText = nil
+      if Defaults[.searchMode] == .ask && !searchQuery.isEmpty { semantic?.prepare() }
       applySearch(selectFirst: true)
     }
   }
 
-  @ObservationIgnored private let service: HistoryService
+  @ObservationIgnored let service: HistoryService
+  @ObservationIgnored let semantic: SemanticEmbedder?
+  @ObservationIgnored var semanticIndex = SemanticIndex()
+  @ObservationIgnored var vectorKeys: [UUID: String] = [:]
+  @ObservationIgnored var embeddingTask: Task<Void, Never>?
+  @ObservationIgnored var embeddingGeneration: UInt64 = 0
+  @ObservationIgnored var embeddingFailed = false
+  @ObservationIgnored var groupCache: (revision: UInt64, order: [UUID], heads: [UUID: UUID])?
+  @ObservationIgnored var neighborCache: (id: UUID, revision: UInt64, versions: [UUID], related: [UUID])?
+  @ObservationIgnored private var askSemanticText: String?
   @ObservationIgnored private let search = Search()
   @ObservationIgnored private let makeSearchPlan: @MainActor (String) async throws -> AskSearchPlan
   @ObservationIgnored private var completedAskQuery: String?
@@ -71,8 +84,10 @@ final class History {
 
   init(repository: HistoryRepository, temporaryStorage: Bool = false,
        images: ImageProcessingService? = nil, ocr: OCRService? = nil, observePreferences: Bool = true,
-       makeSearchPlan: @escaping @MainActor (String) async throws -> AskSearchPlan = AskSearch.plan) {
+       makeSearchPlan: @escaping @MainActor (String) async throws -> AskSearchPlan = AskSearch.plan,
+       semantic: SemanticEmbedder? = AppPreferences.isTesting ? nil : SemanticEngine.shared) {
     self.makeSearchPlan = makeSearchPlan
+    self.semantic = semantic
     service = HistoryService(repository: repository)
     self.temporaryStorage = temporaryStorage
     self.images = images ?? ImageProcessingService()
@@ -233,9 +248,10 @@ final class History {
     ocrSearchThrottler.cancel()
     cancelCopies()
     ocr.cancelAll()
+    embeddingTask?.cancel()
   }
 
-  private func report(_ message: String) {
+  func report(_ message: String) {
     errorMessage = message
     // Do not include clipboard text or model descriptions in logs.
     logger.error("A history operation failed")
@@ -262,7 +278,7 @@ final class History {
     pendingBytes = 0
   }
 
-  private func synchronize(changedID: UUID? = nil) {
+  func synchronize(changedID: UUID? = nil) {
     let retained = Set(service.items.map(\.uuid))
     for decorator in all where !retained.contains(decorator.id) || decorator.id == changedID {
       decorator.cleanupImages()
@@ -286,8 +302,10 @@ final class History {
     if let selectedItem, !retained.contains(selectedItem.id) { self.selectedItem = nil }
     if selectedItem?.id == changedID { selectedItem?.ensurePreviewImage() }
     revision &+= 1
+    rebuildSemanticIndex()
     applySearch(selectFirst: false)
     backfillOCRIfNeeded()
+    backfillEmbeddingsIfNeeded()
   }
 
   func backfillOCRIfNeeded() {
@@ -318,7 +336,7 @@ final class History {
     return true
   }
 
-  private func applySearch(selectFirst: Bool, submitAsk: Bool = false) {
+  func applySearch(selectFirst: Bool, submitAsk: Bool = false) {
     let asking = Defaults[.searchMode] == .ask
     if asking && isPlanningAsk && !selectFirst { return }
     searchTask?.cancel()
@@ -352,18 +370,29 @@ final class History {
           let plan = try await self.makeSearchPlan(query)
           guard !Task.isCancelled, generation == self.searchGeneration else { return }
           self.askPlan = plan
+          self.askSemanticText = plan.terms.joined(separator: " ")
           self.askSearchMessage = "Filters applied. Press Return to use the selected item."
         } catch {
           guard !Task.isCancelled, generation == self.searchGeneration else { return }
-          self.askPlan = nil
-          self.askSearchMessage = AskSearch.availabilityMessage ?? "Ask failed. Exact search results are shown."
+          if self.canSearchByMeaning {
+            // Without filters, search the whole request by meaning and words.
+            self.askPlan = AskSearchPlan(terms: SemanticRanking.terms(query))
+            self.askSemanticText = query
+            self.askSearchMessage = "Searched by meaning. Press Return to use the selected item."
+          } else {
+            self.askPlan = nil
+            self.askSemanticText = nil
+            self.askSearchMessage = AskSearch.availabilityMessage ?? "Ask failed. Exact search results are shown."
+          }
         }
         self.completedAskQuery = query
         self.isPlanningAsk = false
       }
       let results: [Search.SearchResult]
       if asking, let plan = self.askPlan {
-        results = await AskSearch.search(plan, within: self.all, ocr: Defaults[.ocrInImages])
+        let meaning = await self.meaning(of: self.askSemanticText)
+        guard !Task.isCancelled, generation == self.searchGeneration else { return }
+        results = await AskSearch.search(plan, within: self.all, ocr: Defaults[.ocrInImages], meaning: meaning)
       } else {
         results = await self.search.search(string: query, within: self.all, revision: self.revision)
       }
@@ -378,7 +407,8 @@ final class History {
       result.object.highlight(searchQuery, result.ranges)
       return result.object
     }
-    itemsByID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+    applyGrouping()
+    itemsByID = Dictionary(uniqueKeysWithValues: items.filter(\.isVisible).map { ($0.id, $0) })
     if let selectedItem, itemsByID[selectedItem.id] == nil { self.selectedItem = nil }
     updateShortcuts()
     onResultsChange(selectFirst)
@@ -428,6 +458,16 @@ final class History {
         self.backfillOCRIfNeeded()
         self.revision &+= 1
         self.applySearch(selectFirst: false)
+      }
+    })
+    observers.append(Task { [weak self] in
+      for await _ in Defaults.updates(.groupSimilarItems, initial: false) {
+        guard let self else { return }; self.applySearch(selectFirst: false)
+      }
+    })
+    observers.append(Task { [weak self] in
+      for await _ in NotificationCenter.default.notifications(named: .semanticModelChanged) {
+        guard let self else { return }; self.semanticModelChanged()
       }
     })
     observers.append(Task { [weak self] in

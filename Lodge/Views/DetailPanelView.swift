@@ -36,6 +36,8 @@ struct DetailPanelContentView: View {
       PreviewContentView(item: item)
         .padding()
 
+      SimilarItemsView(item: item)
+
       Divider()
 
       // Fixed metadata section at bottom
@@ -123,6 +125,54 @@ struct SelectableText: NSViewRepresentable {
     if textView.string != text {
       textView.string = text
     }
+  }
+}
+
+/// Near-duplicates and related items found by semantic search.
+struct SimilarItemsView: View {
+  var item: HistoryItemDecorator
+  @Environment(AppState.self) private var appState
+
+  var body: some View {
+    let neighbors = appState.history.neighbors(of: item)
+    if !neighbors.versions.isEmpty || !neighbors.related.isEmpty {
+      Divider()
+      VStack(alignment: .leading, spacing: 4) {
+        if !neighbors.versions.isEmpty {
+          Text("Similar versions").font(.headline)
+          ForEach(neighbors.versions.prefix(5)) { row($0) }
+        }
+        if !neighbors.related.isEmpty {
+          Text("Related").font(.headline)
+            .padding(.top, neighbors.versions.isEmpty ? 0 : 6)
+          ForEach(neighbors.related) { row($0) }
+        }
+      }
+      .controlSize(.small)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding()
+    }
+  }
+
+  private func row(_ other: HistoryItemDecorator) -> some View {
+    let visible = appState.history.item(withId: other.id) != nil
+    return Button {
+      if visible { appState.selection = other.id } else { appState.history.select(other) }
+    } label: {
+      HStack(spacing: 6) {
+        Image(nsImage: other.applicationImage.nsImage)
+          .resizable()
+          .frame(width: 14, height: 14)
+          .accessibilityHidden(true)
+        Text(other.imageSizeDescription ?? other.title)
+          .lineLimit(1)
+          .truncationMode(.middle)
+        Spacer(minLength: 0)
+      }
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .help(visible ? "Show this item" : "Copy this item")
   }
 }
 

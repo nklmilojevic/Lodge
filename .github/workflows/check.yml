@@ -17,6 +17,13 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Restore llama.cpp build
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: Packages/LlamaEmbedding/Vendor
+          key: llama-${{ hashFiles('scripts/build-llama.sh', 'scripts/llama.cpp-no-logits.patch') }}
+      - name: Build llama.cpp
+        run: scripts/build-llama.sh
       - name: Build and run unit tests
         run: >-
           xcodebuild -project Lodge.xcodeproj -scheme Lodge

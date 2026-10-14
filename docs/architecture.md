@@ -59,6 +59,40 @@ selection changes. Preview decoding uses one worker and a maximum dimension of
 1,200 pixels. OCR uses at most two workers and a maximum dimension of 2,400
 pixels. Deleted items and disabled OCR cancel pending work and Vision requests.
 
+## Semantic search
+
+Semantic search is optional. The user downloads EmbeddingGemma 2 in General
+settings: the text model (310 MB), and optionally the image encoder (555 MB).
+Both files are ggml-org's Q8_0 GGUF conversion at a pinned Hugging Face revision.
+Each file must match its size and SHA-256 before it is installed in
+`~/Library/Application Support/Lodge/Models`. The model requires Apple silicon.
+
+`scripts/build-llama.sh` builds a pinned llama.cpp release with
+`scripts/llama.cpp-no-logits.patch` into `Packages/LlamaEmbedding/Vendor`. Without
+the patch, each input token reserves 1 MiB of unused logits. The build is not in git.
+CI restores it from the Actions cache. The embedder runs in the app process on one
+serial queue. It loads on first use and unloads after two idle minutes.
+
+History embeds items without a current vector in the background: up to 16 text
+items per batch, and one image at a time. Each vector is 768 half-precision values
+(1.5 KB). Like SQLite indexes, vectors do not count toward the history data
+limit, so saving a vector never removes history.
+`HistoryItem.embeddingSource` records what produced the vector, such as `text1` or
+`image1`. When `LlamaEmbedder.vectorVersion` changes, every item is embedded again.
+Content edits clear the vector.
+
+Scores use each query's distribution: an item matches by meaning when its cosine
+similarity is at least 2 standard deviations above the mean. Text and image
+vectors are centered separately. Ask keeps the Apple Intelligence filters and
+ranks the remaining items by meaning and term coverage. Results under half of the
+top score are dropped. When Apple Intelligence is unavailable, Ask searches the
+whole request by meaning. Near-duplicates have a cosine of at least 0.95. The
+preview lists them, and an optional setting groups older ones under the newest item.
+Related items need a z-score of at least 2.5.
+
+`SemanticModelTests` runs the real model when it is installed and
+`TEST_RUNNER_LODGE_MODEL_TESTS=1` is set. Other tests use a fake embedder.
+
 ## Automated checks
 
 The test plan contains unit tests only. Clipboard tests use a private pasteboard
