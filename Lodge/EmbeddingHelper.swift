@@ -107,6 +107,8 @@ final class EmbeddingHelperClient: @unchecked Sendable {
   private let folder: URL
   private let executable: URL?
   private let lock = NSLock()
+  /// Writes can block when the pipe is full, so they run here, never while holding `lock`, which the reader needs.
+  private let writer = DispatchQueue(label: "com.nklmilojevic.Lodge.embedding-helper.writer")
   private var process: Process?
   private var input: FileHandle?
   private var pending: [Int: (process: Process, continuation: CheckedContinuation<[[Float]], Error>)] = [:]
@@ -123,24 +125,30 @@ final class EmbeddingHelperClient: @unchecked Sendable {
 
   func send(_ request: EmbeddingRequest) async throws -> [[Float]] {
     try await withCheckedThrowingContinuation { continuation in
-      lock.lock()
-      defer { lock.unlock() }
+      let registered: (id: Int, line: Data, input: FileHandle?)
       do {
-        let process = try startIfNeeded()
-        nextID += 1
-        var request = request
-        request.id = nextID
-        var line = try JSONEncoder().encode(request)
-        line.append(0x0A)
-        pending[nextID] = (process, continuation)
-        do {
-          try input?.write(contentsOf: line)
-        } catch {
-          pending.removeValue(forKey: nextID)
-          throw error
+        registered = try lock.withLock {
+          let process = try startIfNeeded()
+          nextID += 1
+          var request = request
+          request.id = nextID
+          var line = try JSONEncoder().encode(request)
+          line.append(0x0A)
+          pending[nextID] = (process, continuation)
+          return (nextID, line, input)
         }
       } catch {
         continuation.resume(throwing: SemanticModelError.helper(String(describing: error)))
+        return
+      }
+      writer.async { [weak self] in
+        do {
+          try registered.input?.write(contentsOf: registered.line)
+        } catch {
+          // The helper exited. Fail the request unless its termination already did.
+          let request = self?.lock.withLock { self?.pending.removeValue(forKey: registered.id) }
+          request?.continuation.resume(throwing: SemanticModelError.helper(String(describing: error)))
+        }
       }
     }
   }
@@ -165,10 +173,11 @@ final class EmbeddingHelperClient: @unchecked Sendable {
     process.standardOutput = standardOutput
     process.standardError = FileHandle.nullDevice
     process.qualityOfService = .utility
-    standardOutput.fileHandleForReading.readabilityHandler = { [weak self] handle in
+    standardOutput.fileHandleForReading.readabilityHandler = { [weak self, weak process] handle in
       let data = handle.availableData
       if data.isEmpty { handle.readabilityHandler = nil }
-      self?.receive(data)
+      guard let process else { return }
+      self?.receive(data, from: process)
     }
     process.terminationHandler = { [weak self] process in self?.terminated(process) }
     try process.run()
@@ -178,9 +187,11 @@ final class EmbeddingHelperClient: @unchecked Sendable {
     return process
   }
 
-  private func receive(_ data: Data) {
+  /// Output from a helper that has been replaced is ignored, so it cannot mix with the new helper's responses.
+  private func receive(_ data: Data, from source: Process) {
     var completed: [(CheckedContinuation<[[Float]], Error>, Result<[[Float]], Error>)] = []
     lock.withLock {
+      guard source === process else { return }
       buffer.append(data)
       while let newline = buffer.firstIndex(of: 0x0A) {
         let line = buffer[buffer.startIndex..<newline]

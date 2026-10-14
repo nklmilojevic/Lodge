@@ -461,6 +461,26 @@ final class EmbeddingHelperClientTests: XCTestCase {
     }
   }
 
+  func testManyLargeRequestsAllGetAnswers() async throws {
+    // More than the pipe buffer in both directions at once. Every request must finish.
+    let client = EmbeddingHelperClient(folder: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString))
+    let answered = await withTaskGroup(of: Bool.self) { group in
+      for index in 0..<40 {
+        group.addTask {
+          var request = EmbeddingRequest(kind: .text)
+          request.texts = [String(repeating: "text \(index) ", count: 2_000)]
+          do { _ = try await client.send(request) } catch SemanticModelError.helper { return true } catch {}
+          return false
+        }
+      }
+      var count = 0
+      for await result in group where result { count += 1 }
+      return count
+    }
+    XCTAssertEqual(answered, 40)
+    client.stop()
+  }
+
   func testTheHelperReportsAMissingModel() async throws {
     // The test host is Lodge, so this starts Lodge's own helper mode with an empty model folder.
     let folder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
