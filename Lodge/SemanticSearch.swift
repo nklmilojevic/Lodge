@@ -158,10 +158,13 @@ enum SemanticRanking {
     "some", "any", "find", "show", "i", "copied", "copy"
   ]
 
-  /// Content words of a free-form query, for keyword coverage when Ask has no filter plan.
+  /// Content words of a free-form query, for keyword coverage when Ask has no filter plan. Hyphens and underscores
+  /// inside a word are kept, so an identifier such as INV-2026-0042 stays one lookup term.
   static func terms(_ query: String) -> [String] {
     var seen = Set<String>()
-    return query.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted)
+    let joiners = CharacterSet(charactersIn: "-_")
+    return query.lowercased().components(separatedBy: CharacterSet.alphanumerics.union(joiners).inverted)
+      .map { $0.trimmingCharacters(in: joiners) }
       .filter { $0.count >= 2 && !stopwords.contains($0) && seen.insert($0).inserted }
   }
 

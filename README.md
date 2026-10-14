@@ -80,8 +80,12 @@ Download the latest release from the
 ### Build from source
 
 ```sh
+scripts/build-llama.sh
 xcodebuild -scheme Lodge -configuration Debug
 ```
+
+`scripts/build-llama.sh` builds llama.cpp for semantic search. It needs CMake
+(or `uv`) and runs again only when the pinned version changes.
 
 ### Ask search (experimental)
 
@@ -89,17 +93,28 @@ Select **Ask** from the menu beside the search field, or in **Settings > General
 Type a request such as “links from Safari yesterday”, then press **Return**.
 After the results appear, press **Return** again to use the selected item.
 
-Ask requires macOS 26 or later and an available Apple Intelligence model.
-Only your request goes to the on-device model. Lodge applies the resulting filters
-locally to clipboard text, optional OCR text, website, source app, and last copy date.
-If Ask is unavailable or fails, Lodge shows exact search results and a status message.
-Other search modes still work on macOS 14 and later.
-
-This first version uses literal text terms and metadata filters. It does not search
-by meaning. Link filters find HTTP or HTTPS URLs, including links within copied text.
+With Apple Intelligence (macOS 26 or later), Ask turns your request into filters
+for website, source app, last copy date, and content type. Only your request goes to
+the on-device model. Lodge applies the filters locally to clipboard text, optional
+OCR text, and metadata. Link filters find HTTP or HTTPS URLs, including links within copied text.
 “GitHub links” searches github.com and its subdomains, from any app and date.
 “GitHub links from Brave yesterday” also applies the requested app and date filters.
 Model output can be incorrect. Check the results before you use an item.
+
+### Semantic search (optional)
+
+In **Settings > General > Meaning**, download EmbeddingGemma 2 (310 MB, or 865 MB
+with image search). The model runs on this Mac and requires Apple silicon. Lodge
+checks each file's size and SHA-256 before it installs the model.
+
+- Ask ranks the filtered items by meaning as well as by matching words. Without
+  Apple Intelligence, Ask searches your whole request by meaning.
+- With image search, Ask also finds images by description, such as “a bar chart”.
+- The preview lists similar versions and related items.
+- **Group similar copies** hides older near-duplicates under the newest copy.
+
+Without the model, or if Ask fails, Lodge shows exact search results and a status
+message. Other search modes still work on macOS 14 and later.
 
 ## Distribution
 

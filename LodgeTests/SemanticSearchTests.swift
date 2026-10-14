@@ -126,6 +126,8 @@ final class SemanticRankingTests: XCTestCase {
 
   func testTermsDropStopwords() {
     XCTAssertEqual(SemanticRanking.terms("Find the recipe I copied from Safari"), ["recipe", "safari"])
+    XCTAssertEqual(SemanticRanking.terms("invoice INV-2026-0042, -draft_v2-"), ["invoice", "inv-2026-0042", "draft_v2"])
+    XCTAssertTrue(SemanticRanking.isLookup(SemanticRanking.terms("INV-2026-0042")))
   }
 
   func testNeighborsSeparateVersionsFromRelatedItems() {
@@ -222,7 +224,8 @@ final class SemanticHistoryTests: XCTestCase {
     XCTAssertEqual(item.item.embedding?.count, 1_536)
     XCTAssertEqual(item.item.payloadByteCount, bytesBefore)
     XCTAssertEqual(history.semanticIndex.count, 1)
-    XCTAssertEqual(history.semanticProgress.indexed, history.semanticProgress.total)
+    XCTAssertEqual(history.semanticProgress.indexed, 1)
+    XCTAssertEqual(history.semanticProgress.total, 1)
     let calls = embedder.documentCalls
     history.backfillEmbeddingsIfNeeded()
     await history.waitForEmbeddings()
@@ -332,6 +335,37 @@ final class SemanticHistoryTests: XCTestCase {
     XCTAssertEqual(history.items.map(\.id), [recipe.id])
   }
 
+  func testAskFallbackRanksAnExactIdentifierFirst() async throws {
+    embedder.vectors["INV-2026-0042"] = FakeEmbedder.vector([0: 1])
+    embedder.vectors["Invoice draft for the March order"] = FakeEmbedder.vector([0: 1, 5: 0.1])
+    embedder.vectors["Paid: INV-2026-0042"] = FakeEmbedder.vector([0: 0.5, 6: 0.85])
+    try add("Invoice draft for the March order")
+    let exact = try add("Paid: INV-2026-0042")
+    try addFiller()
+    await history.waitForEmbeddings()
+    await ask("INV-2026-0042")
+    XCTAssertEqual(history.items.first?.id, exact.id)
+  }
+
+  func testSelectionSkipsHiddenGroupMembers() async throws {
+    Defaults[.sortBy] = .numberOfCopies
+    Defaults[.groupSimilarItems] = true
+    embedder.vectors["Meeting moved to Thursday"] = FakeEmbedder.vector([0: 1, 1: 0.05])
+    embedder.vectors["Meeting moved to Friday"] = FakeEmbedder.vector([0: 1, 2: 0.05])
+    try add("Meeting moved to Thursday")
+    try add("Meeting moved to Thursday")
+    let newer = try add("Meeting moved to Friday")
+    let state = AppState(history: history)
+    await history.waitForEmbeddings()
+    history.refreshSearchResults()
+    await history.waitForGroups()
+    history.searchQuery = "x"
+    history.searchQuery = ""
+    await history.waitForGroups()
+    XCTAssertEqual(state.selection, newer.id)
+    XCTAssertEqual(history.selectedItem?.id, newer.id)
+  }
+
   func testCompletedAskRefreshesWhenNewVectorsArrive() async throws {
     embedder.vectors["port 3000 is already in use"] = FakeEmbedder.vector([0: 1])
     embedder.vectors["server will not start"] = FakeEmbedder.vector([0: 0.9, 3: 0.3])
@@ -387,6 +421,8 @@ final class SemanticHistoryTests: XCTestCase {
     await history.waitForEmbeddings()
     XCTAssertEqual(image.item.embeddingSource, "image1")
     XCTAssertNil(image.item.embedding)
+    XCTAssertEqual(history.semanticProgress.indexed, 0)
+    XCTAssertEqual(history.semanticProgress.unreadable, 1)
     history.backfillEmbeddingsIfNeeded()
     await history.waitForEmbeddings()
     XCTAssertEqual(embedder.imageCalls, 1)

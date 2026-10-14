@@ -18,6 +18,9 @@ xcodebuild -scheme Lodge -configuration Debug
 # Run all tests
 xcodebuild test -scheme Lodge
 
+# Embedding package tests (model tests skip unless the model is installed)
+swift test --package-path Packages/LlamaEmbedding
+
 # Open in Xcode
 open Lodge.xcodeproj
 

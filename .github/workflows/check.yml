@@ -24,6 +24,8 @@ jobs:
           key: llama-${{ hashFiles('scripts/build-llama.sh', 'scripts/llama.cpp-no-logits.patch') }}
       - name: Build llama.cpp
         run: scripts/build-llama.sh
+      - name: Build and test the embedding package
+        run: swift test --package-path Packages/LlamaEmbedding
       - name: Build and run unit tests
         run: >-
           xcodebuild -project Lodge.xcodeproj -scheme Lodge

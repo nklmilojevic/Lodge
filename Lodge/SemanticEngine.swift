@@ -91,6 +91,7 @@ final class SemanticModelStore {
     downloadTask = Task { [weak self] in
       guard let self else { return }
       var completed: Int64 = 0
+      let outcome: Phase
       do {
         try FileManager.default.createDirectory(at: self.folder, withIntermediateDirectories: true)
         var folder = self.folder
@@ -113,29 +114,44 @@ final class SemanticModelStore {
           }
           self.phase = .verifying
           let destination = self.folder.appending(path: file.name)
+          let staged = self.folder.appending(path: file.name + ".partial")
+          // Verify and stage on the destination volume, then commit only if no cancel or removal superseded this install.
           try await Task.detached(priority: .utility) {
             defer { try? FileManager.default.removeItem(at: temporary) }
             let size = try temporary.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
             guard Int64(size) == file.bytes, try EmbeddingModelFiles.sha256(of: temporary) == file.sha256 else {
               throw SemanticModelError.verification
             }
-            try? FileManager.default.removeItem(at: destination)
-            try FileManager.default.moveItem(at: temporary, to: destination)
+            if FileManager.default.fileExists(atPath: staged.path) { try FileManager.default.removeItem(at: staged) }
+            try FileManager.default.moveItem(at: temporary, to: staged)
           }.value
+          do {
+            guard generation == self.installGeneration, !Task.isCancelled else { throw CancellationError() }
+            if FileManager.default.fileExists(atPath: destination.path) {
+              _ = try FileManager.default.replaceItemAt(destination, withItemAt: staged)
+            } else {
+              try FileManager.default.moveItem(at: staged, to: destination)
+            }
+          } catch {
+            try? FileManager.default.removeItem(at: staged)
+            throw error
+          }
           completed += file.bytes
           self.phase = .downloading(fraction: Double(completed) / Double(total))
           self.refresh()
         }
-        self.phase = .idle
+        outcome = .idle
       } catch is CancellationError {
-        self.phase = .idle
+        outcome = .idle
       } catch SemanticModelError.verification {
-        self.phase = .failed("The downloaded model did not pass verification. Try again.")
+        outcome = .failed("The downloaded model did not pass verification. Try again.")
       } catch {
-        self.phase = Task.isCancelled ? .idle : .failed("The model could not be downloaded. Try again.")
+        outcome = Task.isCancelled ? .idle : .failed("The model could not be downloaded. Try again.")
       }
       self.refresh()
+      // A cancel, removal, or newer install owns the state now.
       guard generation == self.installGeneration else { return }
+      self.phase = outcome
       self.download = nil
       self.downloadTask = nil
       NotificationCenter.default.post(name: .semanticModelChanged, object: nil)
@@ -143,8 +159,15 @@ final class SemanticModelStore {
   }
 
   func cancel() {
+    guard isBusy || downloadTask != nil else { return }
+    installGeneration &+= 1
     download?.cancel()
     downloadTask?.cancel()
+    download = nil
+    downloadTask = nil
+    phase = .idle
+    refresh()
+    NotificationCenter.default.post(name: .semanticModelChanged, object: nil)
   }
 
   /// Removes the image model only, or every model file.

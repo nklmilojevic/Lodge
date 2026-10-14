@@ -92,6 +92,8 @@ Related items need a z-score of at least 2.5.
 
 `SemanticModelTests` runs the real model when it is installed and
 `TEST_RUNNER_LODGE_MODEL_TESTS=1` is set. Other tests use a fake embedder.
+`swift test --package-path Packages/LlamaEmbedding` runs the embedder tests,
+which also skip without the model. Pull request CI builds and runs them.
 
 ## Automated checks
 

@@ -198,7 +198,8 @@ private struct SemanticSearchSettings: View {
         Button("Remove model") { store.remove(imagesOnly: false) }
       }
       let progress = AppState.shared.history.semanticProgress
-      caption("\(progress.indexed) of \(progress.total) items indexed.")
+      caption("\(progress.indexed) of \(progress.total) items indexed."
+              + (progress.unreadable > 0 ? " \(progress.unreadable) could not be read." : ""))
     }
   }
 

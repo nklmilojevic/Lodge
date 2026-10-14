@@ -5,17 +5,19 @@ import Foundation
 extension History {
   var canSearchByMeaning: Bool { semantic.map { $0.capability != .none } ?? false && !semanticIndex.isEmpty }
 
-  /// Items with vectors and items that can have one, for the settings status.
-  var semanticProgress: (indexed: Int, total: Int) {
+  /// For the settings status: items with a current vector, items that can have one (empty text excluded), and items
+  /// that were processed but could not be read.
+  var semanticProgress: (indexed: Int, total: Int, unreadable: Int) {
     _ = semanticRevision
-    guard let semantic, semantic.capability != .none else { return (0, 0) }
-    var indexed = 0, total = 0
+    guard let semantic, semantic.capability != .none else { return (0, 0, 0) }
+    var indexed = 0, total = 0, unreadable = 0
     for item in all {
-      guard let desired = desiredEmbeddingSource(item.item, semantic) else { continue }
+      guard let desired = desiredEmbeddingSource(item.item, semantic), !desired.hasPrefix("none") else { continue }
       total += 1
-      if item.item.embeddingSource == desired { indexed += 1 }
+      guard item.item.embeddingSource == desired else { continue }
+      if item.item.embedding == nil { unreadable += 1 } else { indexed += 1 }
     }
-    return (indexed, total)
+    return (indexed, total, unreadable)
   }
 
   /// Near-duplicates and related items for the detail panel.
@@ -193,23 +195,26 @@ extension History {
   }
 
   func waitForGroups() async {
-    while let task = groupTask, !task.isCancelled { await task.value }
+    while let task = groupTask { await task.value }
   }
 
+  /// Runs one calculation at a time. Requests made meanwhile are combined, and the next run uses the latest state.
   private func computeGroups(_ order: [UUID]) {
-    let revision = semanticRevision
-    if let pendingGroups, pendingGroups.revision == revision, pendingGroups.order == order { return }
-    pendingGroups = (revision, order)
-    let index = semanticIndex
-    groupTask?.cancel()
+    pendingGroups = (semanticRevision, order)
+    guard groupTask == nil else { return }
     groupTask = Task { [weak self] in
-      let heads = await Task.detached(priority: .utility) { SemanticRanking.groups(order, in: index) }.value
-      guard let self, !Task.isCancelled else { return }
-      self.groupTask = nil
-      self.pendingGroups = nil
-      guard revision == self.semanticRevision else { return }
-      self.groupCache = (revision, order, heads)
-      self.applySearch(selectFirst: false)
+      while let self, let request = self.pendingGroups, !Task.isCancelled {
+        self.pendingGroups = nil
+        let revision = self.semanticRevision
+        if let cache = self.groupCache, cache.revision == revision, cache.order == request.order { continue }
+        let index = self.semanticIndex
+        let heads = await Task.detached(priority: .utility) { SemanticRanking.groups(request.order, in: index) }.value
+        guard !Task.isCancelled else { break }
+        guard revision == self.semanticRevision else { continue }
+        self.groupCache = (revision, request.order, heads)
+        self.applySearch(selectFirst: false)
+      }
+      self?.groupTask = nil
     }
   }
 }

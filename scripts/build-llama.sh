@@ -29,6 +29,9 @@ fi
 # Without the patch, every input token reserves 1 MiB of logits that an embedding model never produces.
 if git -C "$SOURCE" apply --check "$PWD/$PATCH" 2>/dev/null; then
   git -C "$SOURCE" apply "$PWD/$PATCH"
+elif ! git -C "$SOURCE" apply --reverse --check "$PWD/$PATCH" 2>/dev/null; then
+  echo "$PATCH does not apply to $SOURCE. Delete $SOURCE and run this script again." >&2
+  exit 1
 fi
 
 if ! command -v cmake > /dev/null; then
