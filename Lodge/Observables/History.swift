@@ -328,6 +328,8 @@ final class History {
           if pruned { self.synchronize(); return }
           self.revision &+= 1
           self.ocrSearchThrottler.throttle { [weak self] in self?.applySearch(selectFirst: false) }
+          // The image text gets its own vector.
+          self.backfillEmbeddingsIfNeeded()
         } catch { self.report("Image text could not be saved.") }
       }
     }

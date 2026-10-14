@@ -88,7 +88,10 @@ fixtures written by `scripts/gen-tokenizer-fixtures.py`. CI downloads the pinned
 the earlier llama.cpp vectors with cosine 0.9998 or more for text and images.
 
 History embeds items without a current vector in the background: up to 16 text
-items per batch, and one image at a time. Each vector is 768 half-precision values
+items per batch, and one image at a time. An image with OCR text also gets a vector
+for that text (`imageocr`), and an item matches by its best vector. Without the
+image model, an image's OCR text alone is embedded (`ocr`). OCR uses accurate
+recognition; text from earlier fast recognition is recognized again once. Each vector is 768 half-precision values
 (1.5 KB). Like SQLite indexes, vectors do not count toward the history data
 limit, so saving a vector never removes history.
 `HistoryItem.embeddingSource` records what produced the vector, such as `text2` or

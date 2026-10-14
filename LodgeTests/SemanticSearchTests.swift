@@ -161,6 +161,23 @@ final class SemanticRankingTests: XCTestCase {
     XCTAssertEqual(heads, [entries[10].id: entries[0].id, entries[900].id: entries[500].id])
   }
 
+  func testItemsScoreByTheirBestVector() {
+    let ids = ids(12)
+    var entries = ids.enumerated().map { (id: $1, isImage: false, vector: FakeEmbedder.vector([20 + $0: 1])) }
+    // An image whose picture does not match, but whose text does.
+    entries[0] = (ids[0], true, FakeEmbedder.vector([5: 1]))
+    entries.append((ids[0], false, FakeEmbedder.vector([0: 1])))
+    let index = SemanticIndex(entries)
+    XCTAssertEqual(index.count, 12)
+    let meaning = index.meaning(FakeEmbedder.vector([0: 1]))
+    XCTAssertEqual(meaning.count, 12)
+    XCTAssertGreaterThan(meaning[ids[0]]!.z, SemanticRanking.meaningGate)
+    // The main vector is the image, so similar versions and groups compare pictures.
+    XCTAssertEqual(index.vector(for: ids[0])?[5] ?? 0, 1, accuracy: 0.001)
+    XCTAssertEqual(SemanticRanking.versions(of: ids[0], in: index), [])
+    XCTAssertEqual(SemanticRanking.groups(ids, in: index), [:])
+  }
+
   func testGroupsAttachNearDuplicatesToTheFirstItem() {
     let ids = ids(4)
     let entries: [(id: UUID, isImage: Bool, vector: [Float])] = [
@@ -208,10 +225,54 @@ final class SemanticHistoryTests: XCTestCase {
 
   private func makeHistory(plan: @escaping @MainActor (String) async throws -> AskSearchPlan = { _ in
     throw AskSearchError.unavailable
-  }) {
+  }, imageText: String? = nil) {
     history?.stop()
-    history = History(repository: HistoryRepository(context: container.mainContext), observePreferences: false,
-                      makeSearchPlan: plan, semantic: embedder)
+    let ocr = OCRService { _ in imageText.map { OCRResult(text: $0, width: 4, height: 4) } }
+    history = History(repository: HistoryRepository(context: container.mainContext), ocr: ocr,
+                      observePreferences: false, makeSearchPlan: plan, semantic: embedder)
+  }
+
+  private func addImage() throws -> HistoryItemDecorator {
+    let png = try XCTUnwrap(NSImage(size: NSSize(width: 4, height: 4), flipped: false) { rect in
+      NSColor.red.setFill(); rect.fill(); return true
+    }.tiffRepresentation)
+    let capture = CapturedCopy(contents: [ContentSnapshot(type: NSPasteboard.PasteboardType.tiff.rawValue, value: png)],
+                               application: nil, copiedAt: Date(), changeCount: 0)
+    return try history.add(ContentProcessor.prepare(capture))
+  }
+
+  private func waitForImageText(_ item: HistoryItemDecorator) async throws {
+    for _ in 0..<200 where item.item.ocrText == nil { try await Task.sleep(for: .milliseconds(10)) }
+    await history.waitForEmbeddings()
+  }
+
+  func testImagesAreFoundByTheMeaningOfTheirText() async throws {
+    Defaults[.ocrInImages] = true
+    embedder.capability = .textAndImages
+    embedder.imageVector = FakeEmbedder.vector([4: 1])
+    embedder.vectors["2 · Paying customers · MailerSend"] = FakeEmbedder.vector([0: 1])
+    embedder.vectors["customer growth"] = FakeEmbedder.vector([0: 0.9, 9: 0.4])
+    makeHistory(imageText: "2 · Paying customers · MailerSend")
+    try addFiller()
+    let chart = try addImage()
+    try await waitForImageText(chart)
+    XCTAssertEqual(chart.item.embeddingSource, "imageocr1")
+    XCTAssertEqual(chart.item.embedding?.count, 2 * 1_536)
+    XCTAssertEqual(history.semanticIndex.count, 11)
+    await ask("customer growth")
+    XCTAssertEqual(history.items.first?.id, chart.id)
+  }
+
+  func testImageTextIsEmbeddedWithoutTheImageModel() async throws {
+    Defaults[.ocrInImages] = true
+    embedder.vectors["Invoice 42"] = FakeEmbedder.vector([3: 1])
+    makeHistory(imageText: "Invoice 42")
+    let image = try addImage()
+    try await waitForImageText(image)
+    XCTAssertEqual(image.item.embeddingSource, "ocr1")
+    XCTAssertEqual(image.item.embedding?.count, 1_536)
+    XCTAssertEqual(embedder.imageCalls, 0)
+    XCTAssertEqual(history.semanticIndex.vector(for: image.id)?[3] ?? 0, 1, accuracy: 0.001)
   }
 
   @discardableResult
@@ -540,5 +601,31 @@ final class SemanticModelStoreTests: XCTestCase {
     let store = SemanticModelStore(folder: parent.appending(path: "embeddinggemma-2-coreml"))
     store.remove(imagesOnly: true)
     XCTAssertNil(store.legacyModel())
+  }
+}
+
+@MainActor
+final class AccurateOCRMigrationTests: XCTestCase {
+  func testImageTextIsRecognizedAgainOnce() async throws {
+    let migrations = Defaults[.migrations]
+    defer { Defaults[.migrations] = migrations }
+    Defaults[.migrations]["2026-10-14-accurate-ocr"] = nil
+    let container = try ModelContainer(for: HistoryItem.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+    let repository = HistoryRepository(context: container.mainContext)
+    let item = HistoryItem()
+    repository.insert(item)
+    item.ocrText = "Pwng customw"
+    item.normalizedOCRText = "pwng customw"
+    item.payloadByteCount = 100
+    item.metadataVersion = 1
+    item.normalizedSearchText = ""
+    try container.mainContext.save()
+    try await HistoryService(repository: repository).load()
+    XCTAssertNil(item.ocrText)
+    XCTAssertNil(item.normalizedOCRText)
+    XCTAssertEqual(item.payloadByteCount, 100 - 24)
+    item.ocrText = "Paying customers"
+    try await HistoryService(repository: repository).load()
+    XCTAssertEqual(item.ocrText, "Paying customers")
   }
 }

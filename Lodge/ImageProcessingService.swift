@@ -192,7 +192,8 @@ final class OCRService {
       autoreleasepool {
         guard let result = ImageProcessor.thumbnail(source, maxDimension: 2400), !Task.isCancelled else { return nil }
         let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .fast
+        // Fast recognition misread small text in screenshots and charts, such as headings and labels.
+        request.recognitionLevel = .accurate
         cancellation.register(request)
         do {
           try VNImageRequestHandler(cgImage: result.image, options: [:]).perform([request])

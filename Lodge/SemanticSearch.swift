@@ -20,6 +20,13 @@ enum SemanticVectors {
     return halves.withUnsafeBufferPointer { Data(buffer: $0) }
   }
 
+  /// One or more vectors stored back to back.
+  static func unpackAll(_ data: Data) -> [[Float]] {
+    let size = dimension * 2
+    guard !data.isEmpty, data.count % size == 0 else { return [] }
+    return stride(from: 0, to: data.count, by: size).compactMap { unpack(data.subdata(in: $0..<($0 + size))) }
+  }
+
   static func unpack(_ data: Data) -> [Float]? {
     guard data.count == dimension * 2 else { return nil }
     var floats = [Float](repeating: 0, count: dimension)
@@ -36,23 +43,28 @@ enum SemanticVectors {
   }
 }
 
-/// Item vectors in one row-major matrix, so a query scores every item with one multiplication.
+/// Item vectors in one row-major matrix, so a query scores every item with one multiplication. An item can have
+/// several rows, such as an image and the text in it. Its first row is its main vector, which similar versions and
+/// grouping compare.
 struct SemanticIndex: Sendable {
+  /// The item and modality of each row.
   private(set) var ids: [UUID] = []
   private(set) var isImage: [Bool] = []
   private var matrix: [Float] = []
-  private var rows: [UUID: Int] = [:]
+  /// Each item's main row.
+  private(set) var rows: [UUID: Int] = [:]
 
   init(_ entries: [(id: UUID, isImage: Bool, vector: [Float])] = []) {
-    for entry in entries where entry.vector.count == SemanticVectors.dimension && rows[entry.id] == nil {
-      rows[entry.id] = ids.count
+    for entry in entries where entry.vector.count == SemanticVectors.dimension {
+      if rows[entry.id] == nil { rows[entry.id] = ids.count }
       ids.append(entry.id)
       isImage.append(entry.isImage)
       matrix += entry.vector
     }
   }
 
-  var count: Int { ids.count }
+  /// The number of items.
+  var count: Int { rows.count }
   var isEmpty: Bool { ids.isEmpty }
 
   func vector(for id: UUID) -> [Float]? {
@@ -76,9 +88,9 @@ struct SemanticIndex: Sendable {
   static let referenceDeviation = 0.045
   static let referenceMinimum = 20
 
-  /// How far each item stands out for this query, in standard deviations. Text and image vectors sit at different
-  /// levels for the same query, so each modality is centered on its own mean first. Modalities with fewer than 20
-  /// vectors use the overall mean. Adapted from DigUp (https://github.com/ARahim3/DigUp), MIT License.
+  /// How far each item stands out for this query, in standard deviations, using its best row. Text and image vectors
+  /// sit at different levels for the same query, so each modality is centered on its own mean first. Modalities with
+  /// fewer than 20 vectors use the overall mean. Adapted from DigUp (https://github.com/ARahim3/DigUp), MIT License.
   func meaning(_ query: [Float], excluding excluded: UUID? = nil) -> [UUID: (z: Double, cosine: Float)] {
     let scores = cosines(query)
     guard scores.count == ids.count else { return [:] }
@@ -102,6 +114,7 @@ struct SemanticIndex: Sendable {
     for (offset, row) in included.enumerated() {
       var z = (centered[offset] - mean) / deviation
       if small { z = max(z, (Double(scores[row]) - Self.referenceMean) / Self.referenceDeviation) }
+      if let best = result[ids[row]], best.z >= z { continue }
       result[ids[row]] = (z, scores[row])
     }
     return result
@@ -156,18 +169,18 @@ enum SemanticRanking {
 
   /// Near-duplicates of `id` of the same kind, most similar first.
   static func versions(of id: UUID, in index: SemanticIndex) -> [UUID] {
-    guard let vector = index.vector(for: id), let row = index.ids.firstIndex(of: id) else { return [] }
+    guard let vector = index.vector(for: id), let row = index.rows[id] else { return [] }
     let scores = index.cosines(vector)
-    return index.ids.indices
-      .filter { $0 != row && index.isImage[$0] == index.isImage[row] && scores[$0] >= nearDuplicate }
-      .sorted { scores[$0] > scores[$1] }
-      .map { index.ids[$0] }
+    return index.rows
+      .filter { $0.key != id && index.isImage[$0.value] == index.isImage[row] && scores[$0.value] >= nearDuplicate }
+      .sorted { scores[$0.value] > scores[$1.value] }
+      .map(\.key)
   }
 
   /// Groups near-duplicates under the first item in `order` that has them. Returns each member's group head.
   /// Each head scores one row at a time, so memory grows linearly with the history size.
   static func groups(_ order: [UUID], in index: SemanticIndex) -> [UUID: UUID] {
-    let rows = Dictionary(uniqueKeysWithValues: index.ids.enumerated().map { ($1, $0) })
+    let rows = index.rows
     let ordered = order.filter { rows[$0] != nil }
     var head: [UUID: UUID] = [:]
     for (position, first) in ordered.enumerated() where head[first] == nil && position + 1 < ordered.count {

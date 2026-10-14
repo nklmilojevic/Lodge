@@ -61,11 +61,30 @@ final class HistoryService {
         item.payloadByteCount += Int64((oldOCR?.utf8.count ?? 0) + (processed.1?.utf8.count ?? 0))
       }
     }
+    try recognizeImageTextAgain(results)
     let retained = try repository.transaction {
       try repository.deleteOrphanedContents()
       return prune(results)
     }
     publish(retained)
+  }
+
+  /// Lodge 2.2 and earlier used fast text recognition. Clearing that text once lets the OCR backfill recognize every
+  /// image again with accurate recognition.
+  private func recognizeImageTextAgain(_ results: [HistoryItem]) throws {
+    let migration = "2026-10-14-accurate-ocr"
+    guard Defaults[.migrations][migration] != true else { return }
+    let scanned = results.filter { $0.ocrText != nil }
+    if !scanned.isEmpty {
+      try repository.transaction(updating: scanned) {
+        for item in scanned {
+          item.payloadByteCount -= Int64((item.ocrText?.utf8.count ?? 0) + (item.normalizedOCRText?.utf8.count ?? 0))
+          item.ocrText = nil
+          item.normalizedOCRText = nil
+        }
+      }
+    }
+    Defaults[.migrations][migration] = true
   }
 
   @discardableResult
