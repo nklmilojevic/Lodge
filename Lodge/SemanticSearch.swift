@@ -69,18 +69,6 @@ struct SemanticIndex: Sendable {
     return scores
   }
 
-  /// Every pairwise cosine similarity, row-major.
-  func pairwiseCosines() -> [Float] {
-    let count = ids.count
-    guard count > 0 else { return [] }
-    var transposed = [Float](repeating: 0, count: matrix.count)
-    vDSP_mtrans(matrix, 1, &transposed, 1, vDSP_Length(SemanticVectors.dimension), vDSP_Length(count))
-    var result = [Float](repeating: 0, count: count * count)
-    vDSP_mmul(matrix, 1, transposed, 1, &result, 1, vDSP_Length(count), vDSP_Length(count),
-              vDSP_Length(SemanticVectors.dimension))
-    return result
-  }
-
   /// Typical query cosine level with EmbeddingGemma 2, for text and images alike: unrelated items scored 0.48–0.66,
   /// matches 0.73–0.86. A small history cannot reach z = 2 (the maximum is √(count − 1)), so below
   /// `referenceMinimum` items each score is also measured against this reference and the larger z counts.
@@ -187,19 +175,18 @@ enum SemanticRanking {
   }
 
   /// Groups near-duplicates under the first item in `order` that has them. Returns each member's group head.
+  /// Each head scores one row at a time, so memory grows linearly with the history size.
   static func groups(_ order: [UUID], in index: SemanticIndex) -> [UUID: UUID] {
     let rows = Dictionary(uniqueKeysWithValues: index.ids.enumerated().map { ($1, $0) })
     let ordered = order.filter { rows[$0] != nil }
-    guard ordered.count > 1 else { return [:] }
-    let similarity = index.pairwiseCosines()
     var head: [UUID: UUID] = [:]
-    for (position, first) in ordered.enumerated() where head[first] == nil {
-      let row = rows[first]!
+    for (position, first) in ordered.enumerated() where head[first] == nil && position + 1 < ordered.count {
+      guard !Task.isCancelled, let vector = index.vector(for: first) else { break }
+      let scores = index.cosines(vector)
+      let isImage = index.isImage[rows[first]!]
       for other in ordered[(position + 1)...] where head[other] == nil {
         let column = rows[other]!
-        if index.isImage[row] == index.isImage[column] && similarity[row * index.count + column] >= nearDuplicate {
-          head[other] = first
-        }
+        if index.isImage[column] == isImage && scores[column] >= nearDuplicate { head[other] = first }
       }
     }
     return head

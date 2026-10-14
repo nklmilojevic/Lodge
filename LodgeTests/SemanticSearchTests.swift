@@ -143,6 +143,26 @@ final class SemanticRankingTests: XCTestCase {
     XCTAssertEqual(SemanticRanking.neighbors(of: UUID(), in: SemanticIndex(entries)).versions, [])
   }
 
+  func testGroupingHandlesAFullHistory() {
+    var generator = SystemRandomNumberGenerator()
+    var entries: [(id: UUID, isImage: Bool, vector: [Float])] = (0..<999).map { _ in
+      let raw = (0..<SemanticVectors.dimension).map { _ in Float.random(in: -1...1, using: &generator) }
+      let length = raw.reduce(0) { $0 + $1 * $1 }.squareRoot()
+      return (UUID(), false, raw.map { $0 / length })
+    }
+    // Item 10 is a near-duplicate of item 0, and item 900 of item 500.
+    entries[10].vector = zip(entries[0].vector, entries[10].vector).map { $0 + 0.05 * $1 }
+    entries[900].vector = zip(entries[500].vector, entries[900].vector).map { $0 + 0.05 * $1 }
+    for row in [10, 900] {
+      let length = entries[row].vector.reduce(0) { $0 + $1 * $1 }.squareRoot()
+      entries[row].vector = entries[row].vector.map { $0 / length }
+    }
+    let started = Date()
+    let heads = SemanticRanking.groups(entries.map(\.id), in: SemanticIndex(entries))
+    XCTAssertLessThan(Date().timeIntervalSince(started), 5)
+    XCTAssertEqual(heads, [entries[10].id: entries[0].id, entries[900].id: entries[500].id])
+  }
+
   func testGroupsAttachNearDuplicatesToTheFirstItem() {
     let ids = ids(4)
     let entries: [(id: UUID, isImage: Bool, vector: [Float])] = [
