@@ -61,25 +61,39 @@ pixels. Deleted items and disabled OCR cancel pending work and Vision requests.
 
 ## Semantic search
 
-Semantic search is optional. The user downloads EmbeddingGemma 2 in General
-settings: the text model (310 MB), and optionally the image encoder (555 MB).
-Both files are ggml-org's Q8_0 GGUF conversion at a pinned Hugging Face revision.
-Each file must match its size and SHA-256 before it is installed in
-`~/Library/Application Support/Lodge/Models`. The model requires Apple silicon.
+Semantic search is optional and requires macOS 15 on Apple silicon. The user
+downloads EmbeddingGemma 2 in General settings: the text model (585 MB) and,
+optionally, the image encoder (310 MB). The files are FluidInference's Core ML
+conversion (Apache 2.0) at a pinned Hugging Face revision. Each file must match
+its size and SHA-256 before it is installed in
+`~/Library/Application Support/Lodge/Models/embeddinggemma-2-coreml`. Lodge 2.1's
+llama.cpp files are removed at launch, and the Core ML model is downloaded for
+users who had installed the old one.
 
-`scripts/build-llama.sh` builds a pinned llama.cpp release with
-`scripts/llama.cpp-no-logits.patch` into `Packages/LlamaEmbedding/Vendor`. Without
-the patch, each input token reserves 1 MiB of unused logits. The build is not in git.
-CI restores it from the Actions cache. The embedder runs in the app process on one
-serial queue. It loads on first use and unloads after two idle minutes.
+The model never loads in the app. `EmbeddingHelperClient` starts Lodge's own
+binary with `--embedding-helper` and exchanges one JSON line per request over
+standard input and output. The helper runs `CoreMLEmbedder`: text on the Neural
+Engine and images on the GPU. It exits after two idle minutes or when Lodge
+closes the pipe. If it exits or crashes, its pending requests fail and the next
+request starts a new helper. Image data reaches the helper through a temporary
+file. The first load on a Mac compiles each text function for the Neural Engine,
+which takes up to half a minute per function once. Compiled models are cached in
+the model folder.
+
+`GemmaTokenizer` reimplements the Hugging Face tokenizer and keys tokens by their
+exact UTF-8 bytes, because Swift strings and NSString keys merge distinct
+vocabulary entries. `GemmaTokenizerTests` requires exact token IDs for the
+fixtures written by `scripts/gen-tokenizer-fixtures.py`. CI downloads the pinned
+`tokenizer.json` for this test. On the same inputs, the Core ML vectors matched
+the earlier llama.cpp vectors with cosine 0.9998 or more for text and images.
 
 History embeds items without a current vector in the background: up to 16 text
 items per batch, and one image at a time. Each vector is 768 half-precision values
 (1.5 KB). Like SQLite indexes, vectors do not count toward the history data
 limit, so saving a vector never removes history.
-`HistoryItem.embeddingSource` records what produced the vector, such as `text1` or
-`image1`. When `LlamaEmbedder.vectorVersion` changes, every item is embedded again.
-Content edits clear the vector.
+`HistoryItem.embeddingSource` records what produced the vector, such as `text2` or
+`image2`. When `SemanticModelFiles.vectorVersion` changes, every item is embedded
+again. Content edits clear the vector.
 
 Scores use each query's distribution: an item matches by meaning when its cosine
 similarity is at least 2 standard deviations above the mean. Text and image
@@ -88,12 +102,9 @@ ranks the remaining items by meaning and term coverage. Results under half of th
 top score are dropped. When Apple Intelligence is unavailable, Ask searches the
 whole request by meaning. Near-duplicates have a cosine of at least 0.95. The
 preview lists them, and an optional setting groups older ones under the newest item.
-Related items need a z-score of at least 2.5.
 
-`SemanticModelTests` runs the real model when it is installed and
-`TEST_RUNNER_LODGE_MODEL_TESTS=1` is set. Other tests use a fake embedder.
-`swift test --package-path Packages/LlamaEmbedding` runs the embedder tests,
-which also skip without the model. Pull request CI builds and runs them.
+`SemanticModelTests` runs the real model through the helper when it is installed
+and `TEST_RUNNER_LODGE_MODEL_TESTS=1` is set. Other tests use a fake embedder.
 
 ## Automated checks
 

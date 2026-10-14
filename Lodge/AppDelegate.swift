@@ -98,6 +98,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     guard !AppPreferences.isTesting else { return }
     migrateUserDefaults()
     disableUnusedGlobalHotkeys()
+    SemanticModelStore.shared.migrateLegacyModel()
 
     panel = FloatingPanel(
       contentRect: NSRect(origin: .zero, size: Defaults[.windowSize]),

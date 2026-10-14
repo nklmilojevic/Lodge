@@ -111,8 +111,6 @@ struct SemanticIndex: Sendable {
 enum SemanticRanking {
   /// An item matches by meaning when it stands this many deviations above the query's average.
   static let meaningGate = 2.0
-  /// Related items must stand out more, because the list is not requested by the user.
-  static let relatedGate = 2.5
   /// Small edits of the same text scored 0.97–0.98 with EmbeddingGemma 2; unrelated pairs stayed below 0.86.
   static let nearDuplicate: Float = 0.95
   /// Results below this share of the top score are dropped.
@@ -156,22 +154,14 @@ enum SemanticRanking {
       .filter { $0.count >= 2 && !stopwords.contains($0) && seen.insert($0).inserted }
   }
 
-  /// Items similar to `id`: near-duplicates of the same kind, and other items that stand out by meaning.
-  static func neighbors(of id: UUID, in index: SemanticIndex, limit: Int = 5) -> (versions: [UUID], related: [UUID]) {
-    guard let vector = index.vector(for: id) else { return ([], []) }
-    let isImage = index.isImage[index.ids.firstIndex(of: id)!]
-    let scores = index.meaning(vector, excluding: id)
-    var versions: [(UUID, Float)] = []
-    var related: [(UUID, Float)] = []
-    for (row, other) in index.ids.enumerated() where other != id {
-      guard let score = scores[other] else { continue }
-      if score.cosine >= nearDuplicate && index.isImage[row] == isImage {
-        versions.append((other, score.cosine))
-      } else if score.z >= relatedGate {
-        related.append((other, score.cosine))
-      }
-    }
-    return (versions.sorted { $0.1 > $1.1 }.map(\.0), Array(related.sorted { $0.1 > $1.1 }.prefix(limit).map(\.0)))
+  /// Near-duplicates of `id` of the same kind, most similar first.
+  static func versions(of id: UUID, in index: SemanticIndex) -> [UUID] {
+    guard let vector = index.vector(for: id), let row = index.ids.firstIndex(of: id) else { return [] }
+    let scores = index.cosines(vector)
+    return index.ids.indices
+      .filter { $0 != row && index.isImage[$0] == index.isImage[row] && scores[$0] >= nearDuplicate }
+      .sorted { scores[$0] > scores[$1] }
+      .map { index.ids[$0] }
   }
 
   /// Groups near-duplicates under the first item in `order` that has them. Returns each member's group head.

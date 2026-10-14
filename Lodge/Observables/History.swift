@@ -8,7 +8,8 @@ import Sauce
 @Observable
 @MainActor
 final class History {
-  static let shared = History(repository: .shared, temporaryStorage: Storage.shared.loadError != nil)
+  static let shared = History(repository: .shared, temporaryStorage: Storage.shared.loadError != nil,
+                              semantic: AppPreferences.isTesting ? nil : SemanticEngine.shared)
   let logger = Logger(label: "com.nklmilojevic.Lodge")
   private(set) var items: [HistoryItemDecorator] = []
   private(set) var all: [HistoryItemDecorator] = []
@@ -63,7 +64,7 @@ final class History {
   @ObservationIgnored var groupTask: Task<Void, Never>?
   @ObservationIgnored var pendingGroups: (revision: UInt64, order: [UUID])?
   @ObservationIgnored let semanticRefreshThrottler = Throttler(minimumDelay: 0.5)
-  @ObservationIgnored var neighborCache: (id: UUID, revision: UInt64, versions: [UUID], related: [UUID])?
+  @ObservationIgnored var versionCache: (id: UUID, revision: UInt64, versions: [UUID])?
   @ObservationIgnored private var askSemanticText: String?
   @ObservationIgnored private let search = Search()
   @ObservationIgnored private let makeSearchPlan: @MainActor (String) async throws -> AskSearchPlan
@@ -88,7 +89,7 @@ final class History {
   init(repository: HistoryRepository, temporaryStorage: Bool = false,
        images: ImageProcessingService? = nil, ocr: OCRService? = nil, observePreferences: Bool = true,
        makeSearchPlan: @escaping @MainActor (String) async throws -> AskSearchPlan = AskSearch.plan,
-       semantic: SemanticEmbedder? = AppPreferences.isTesting ? nil : SemanticEngine.shared) {
+       semantic: SemanticEmbedder? = nil) {
     self.makeSearchPlan = makeSearchPlan
     self.semantic = semantic
     service = HistoryService(repository: repository)

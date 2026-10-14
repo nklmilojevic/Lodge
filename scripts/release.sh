@@ -27,7 +27,6 @@ fi
 rm -rf "$BUILD_DIR"
 mkdir -p "$UPDATE_DIR"
 
-"$ROOT_DIR/scripts/build-llama.sh"
 xcodebuild -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile -scheme Lodge -configuration Release -archivePath "$ARCHIVE_PATH" archive
 xcodebuild -exportArchive -archivePath "$ARCHIVE_PATH" -exportOptionsPlist "$ROOT_DIR/scripts/export-options.plist" -exportPath "$EXPORT_PATH"
 

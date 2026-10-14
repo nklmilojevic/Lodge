@@ -32,17 +32,20 @@ struct DetailPanelContentView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      // Preview section with its own scrolling
-      PreviewContentView(item: item)
-        .padding()
-
-      SimilarItemsView(item: item)
+      // Preview section with its own scrolling. Similar versions share its space.
+      VStack(alignment: .leading, spacing: 0) {
+        PreviewContentView(item: item)
+          .padding()
+        SimilarVersionsView(item: item)
+      }
+      .frame(maxHeight: .infinity, alignment: .top)
 
       Divider()
 
-      // Fixed metadata section at bottom
+      // Metadata has the same rows and height for every item, so it never moves.
       MetadataSectionView(item: item)
         .padding()
+        .fixedSize(horizontal: false, vertical: true)
     }
     .task(id: item.id) { item.ensurePreviewImage() }
     .onDisappear { item.cleanupImages() }
@@ -128,25 +131,18 @@ struct SelectableText: NSViewRepresentable {
   }
 }
 
-/// Near-duplicates and related items found by semantic search.
-struct SimilarItemsView: View {
+/// Near-duplicates found by semantic search.
+struct SimilarVersionsView: View {
   var item: HistoryItemDecorator
   @Environment(AppState.self) private var appState
 
   var body: some View {
-    let neighbors = appState.history.neighbors(of: item)
-    if !neighbors.versions.isEmpty || !neighbors.related.isEmpty {
+    let versions = appState.history.versions(of: item)
+    if !versions.isEmpty {
       Divider()
       VStack(alignment: .leading, spacing: 4) {
-        if !neighbors.versions.isEmpty {
-          Text("Similar versions").font(.headline)
-          ForEach(neighbors.versions.prefix(5)) { row($0) }
-        }
-        if !neighbors.related.isEmpty {
-          Text("Related").font(.headline)
-            .padding(.top, neighbors.versions.isEmpty ? 0 : 6)
-          ForEach(neighbors.related) { row($0) }
-        }
+        Text("Similar versions").font(.headline)
+        ForEach(versions.prefix(5)) { row($0) }
       }
       .controlSize(.small)
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -193,44 +189,41 @@ struct MetadataSectionView: View {
         .font(.headline)
         .padding(.bottom, 4)
 
-      // Source application
-      if let application = item.application {
-        MetadataRow(label: "detail_panel_source") {
+      // Every row is always shown, with a dash when it does not apply, so the section keeps one height.
+      MetadataRow(label: "detail_panel_source") {
+        if let application = item.application {
           HStack(spacing: 4) {
             Image(nsImage: item.applicationImage.nsImage)
               .resizable()
               .frame(width: 14, height: 14)
-            Text(application)
+            Text(application).lineLimit(1)
           }
+        } else {
+          Text(verbatim: "—")
         }
       }
 
       // Content type
       MetadataRow(label: "detail_panel_content_type") {
-        Text(item.contentTypeDescription)
+        Text(item.contentTypeDescription).lineLimit(1)
       }
 
-      // Character count (only for text, not images)
-      if !item.hasImage {
-        MetadataRow(label: "detail_panel_characters") {
-          Text(String(item.characterCount))
-        }
-
-        MetadataRow(label: "detail_panel_words") {
-          Text(String(item.wordCount))
-        }
+      MetadataRow(label: "detail_panel_characters") {
+        Text(verbatim: item.hasImage ? "—" : String(item.characterCount))
       }
 
-      // Timestamps
+      MetadataRow(label: "detail_panel_words") {
+        Text(verbatim: item.hasImage ? "—" : String(item.wordCount))
+      }
+
       MetadataRow(label: "detail_panel_copied") {
         Text(Self.copiedDateFormatter.string(from: item.item.lastCopiedAt))
-          .fixedSize(horizontal: false, vertical: true)
+          .lineLimit(1)
+          .truncationMode(.tail)
       }
 
-      if item.item.numberOfCopies > 1 {
-        MetadataRow(label: "detail_panel_times_copied") {
-          Text(String(item.item.numberOfCopies))
-        }
+      MetadataRow(label: "detail_panel_times_copied") {
+        Text(String(item.item.numberOfCopies))
       }
     }
     .controlSize(.small)

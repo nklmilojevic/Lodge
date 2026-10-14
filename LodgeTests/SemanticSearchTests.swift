@@ -130,17 +130,15 @@ final class SemanticRankingTests: XCTestCase {
     XCTAssertTrue(SemanticRanking.isLookup(SemanticRanking.terms("INV-2026-0042")))
   }
 
-  func testNeighborsSeparateVersionsFromRelatedItems() {
+  func testVersionsAreNearDuplicatesOfTheSameKind() {
     let ids = ids(40)
     var entries = ids.enumerated().map { (id: $1, isImage: false, vector: FakeEmbedder.vector([20 + $0: 1])) }
     entries[0].vector = FakeEmbedder.vector([0: 1, 20: 0.05])
     entries[1].vector = FakeEmbedder.vector([0: 1, 21: 0.1])      // near-duplicate of 0
     entries[2].vector = FakeEmbedder.vector([0: 0.7, 22: 0.7])    // related to 0
     entries[3] = (ids[3], true, FakeEmbedder.vector([0: 1, 23: 0.05]))  // an image, never a version of text
-    let neighbors = SemanticRanking.neighbors(of: ids[0], in: SemanticIndex(entries))
-    XCTAssertEqual(neighbors.versions, [ids[1]])
-    XCTAssertEqual(Set(neighbors.related), Set([ids[2], ids[3]]))
-    XCTAssertEqual(SemanticRanking.neighbors(of: UUID(), in: SemanticIndex(entries)).versions, [])
+    XCTAssertEqual(SemanticRanking.versions(of: ids[0], in: SemanticIndex(entries)), [ids[1]])
+    XCTAssertEqual(SemanticRanking.versions(of: UUID(), in: SemanticIndex(entries)), [])
   }
 
   func testGroupingHandlesAFullHistory() {
@@ -321,7 +319,7 @@ final class SemanticHistoryTests: XCTestCase {
     XCTAssertEqual(history.visibleUnpinnedItems.map(\.id), [newer.id, other.id])
     XCTAssertEqual(newer.similarCount, 1)
     XCTAssertNil(history.item(withId: older.id))
-    XCTAssertEqual(history.neighbors(of: newer).versions.map(\.id), [older.id])
+    XCTAssertEqual(history.versions(of: newer).map(\.id), [older.id])
     Defaults[.searchMode] = .exact
     history.searchQuery = "Meeting"
     await history.waitForSearch()
@@ -446,5 +444,101 @@ final class SemanticHistoryTests: XCTestCase {
     history.backfillEmbeddingsIfNeeded()
     await history.waitForEmbeddings()
     XCTAssertEqual(embedder.imageCalls, 1)
+  }
+}
+
+final class EmbeddingHelperClientTests: XCTestCase {
+  func testAHelperThatExitsFailsItsRequestsAndTheNextRequestStartsAgain() async throws {
+    let client = EmbeddingHelperClient(folder: FileManager.default.temporaryDirectory,
+                                       executable: URL(fileURLWithPath: "/usr/bin/false"))
+    for _ in 0..<2 {
+      do {
+        _ = try await client.send(EmbeddingRequest(kind: .prepare))
+        XCTFail("The request should fail")
+      } catch SemanticModelError.helper {
+        // Either the write to the exited helper fails, or its termination fails the pending request.
+      }
+    }
+  }
+
+  func testManyLargeRequestsAllGetAnswers() async throws {
+    // cat answers every request line with a reply of the same size while requests are still being written, so
+    // both pipes are far past their buffers at once. Each request must get its own reply, not a helper failure.
+    let client = EmbeddingHelperClient(folder: FileManager.default.temporaryDirectory,
+                                       executable: URL(fileURLWithPath: "/bin/cat"), arguments: ["-u"])
+    let answered = await withTaskGroup(of: Bool.self) { group in
+      for index in 0..<40 {
+        group.addTask {
+          var request = EmbeddingRequest(kind: .text)
+          request.texts = [String(repeating: "text \(index) ", count: 4_000)]
+          do {
+            _ = try await client.send(request)
+          } catch SemanticModelError.helper(let message) {
+            // The echoed request decodes as a response without vectors.
+            return message == "No response"
+          } catch {}
+          return false
+        }
+      }
+      var count = 0
+      for await result in group where result { count += 1 }
+      return count
+    }
+    XCTAssertEqual(answered, 40)
+    client.stop()
+  }
+
+  func testTheHelperReportsAMissingModel() async throws {
+    // The test host is Lodge, so this starts Lodge's own helper mode with an empty model folder.
+    let folder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    let client = EmbeddingHelperClient(folder: folder)
+    var request = EmbeddingRequest(kind: .text)
+    request.texts = ["hello"]
+    do {
+      _ = try await client.send(request)
+      XCTFail("The request should fail")
+    } catch SemanticModelError.helper(let message) {
+      // An answer from the helper, not a crash.
+      XCTAssertNotEqual(message, "The embedding helper stopped.")
+      XCTAssertFalse(message.isEmpty)
+    }
+    client.stop()
+  }
+}
+
+@MainActor
+final class SemanticModelStoreTests: XCTestCase {
+  func testLegacyModelStaysUntilTheReplacementIsInstalled() throws {
+    let parent = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: parent) }
+    let folder = parent.appending(path: "embeddinggemma-2-coreml")
+    var store = SemanticModelStore(folder: folder)
+    XCTAssertNil(store.legacyModel())
+    try Data([1]).write(to: parent.appending(path: "embeddinggemma-2-Q8_0.gguf"))
+    XCTAssertEqual(store.legacyModel(), false)
+    // With the replacement text model in place, migration removes the old files without downloading.
+    for file in SemanticModelFiles.text {
+      let url = folder.appending(path: file.path)
+      try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+      try Data([1]).write(to: url)
+    }
+    store = SemanticModelStore(folder: folder)
+    store.migrateLegacyModel()
+    // Macs that cannot run the Core ML model keep the old files.
+    XCTAssertEqual(store.legacyModel(), SemanticModelStore.isSupported ? nil : false)
+    XCTAssertFalse(store.isBusy)
+  }
+
+  func testRemovingTheModelAlsoRemovesTheLegacyModel() throws {
+    let parent = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: parent) }
+    for name in ["embeddinggemma-2-Q8_0.gguf", "mmproj-embeddinggemma-2-Q8_0.gguf"] {
+      try Data([1]).write(to: parent.appending(path: name))
+    }
+    let store = SemanticModelStore(folder: parent.appending(path: "embeddinggemma-2-coreml"))
+    store.remove(imagesOnly: true)
+    XCTAssertNil(store.legacyModel())
   }
 }
