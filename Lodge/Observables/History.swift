@@ -59,6 +59,9 @@ final class History {
   @ObservationIgnored var vectorKeys: [UUID: String] = [:]
   @ObservationIgnored var embeddingTask: Task<Void, Never>?
   @ObservationIgnored var embeddingGeneration: UInt64 = 0
+  /// Images whose text could not be recognized again in this session. They keep their earlier text and are tried
+  /// again after the next launch.
+  @ObservationIgnored private var unreadableImageText = Set<UUID>()
   @ObservationIgnored var embeddingFailed = false
   @ObservationIgnored var groupCache: (revision: UInt64, order: [UUID], heads: [UUID: UUID])?
   @ObservationIgnored var groupTask: Task<Void, Never>?
@@ -316,10 +319,17 @@ final class History {
 
   func backfillOCRIfNeeded() {
     guard Defaults[.ocrInImages] else { ocr.cancelAll(); return }
-    for decorator in all where decorator.hasImage && decorator.item.ocrText == nil {
+    for decorator in all where decorator.hasImage && !unreadableImageText.contains(decorator.id) &&
+      (decorator.item.ocrText == nil || decorator.item.ocrVersion < HistoryItem.currentOCRVersion) {
       let item = decorator.item
       let fingerprint = item.contentFingerprint
-      ocr.enqueue(id: item.uuid, source: { [weak item] in item?.imageSource }) { [weak self, weak item] result in
+      // Earlier text stays when an image cannot be read again, for example a file that is missing now.
+      let failure: () -> Void = { [weak self, weak item] in
+        guard let self, let item, item.ocrText != nil, item.contentFingerprint == fingerprint else { return }
+        self.unreadableImageText.insert(item.uuid)
+      }
+      ocr.enqueue(id: item.uuid, source: { [weak item] in item?.imageSource },
+                  failure: failure) { [weak self, weak item] result in
         guard let self, let item, item.contentFingerprint == fingerprint,
               self.service.items.contains(where: { $0.uuid == item.uuid }) else { return }
         do {
@@ -328,6 +338,8 @@ final class History {
           if pruned { self.synchronize(); return }
           self.revision &+= 1
           self.ocrSearchThrottler.throttle { [weak self] in self?.applySearch(selectFirst: false) }
+          // The image text gets its own vector.
+          self.backfillEmbeddingsIfNeeded()
         } catch { self.report("Image text could not be saved.") }
       }
     }

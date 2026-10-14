@@ -161,6 +161,23 @@ final class SemanticRankingTests: XCTestCase {
     XCTAssertEqual(heads, [entries[10].id: entries[0].id, entries[900].id: entries[500].id])
   }
 
+  func testItemsScoreByTheirBestVector() {
+    let ids = ids(12)
+    var entries = ids.enumerated().map { (id: $1, isImage: false, vector: FakeEmbedder.vector([20 + $0: 1])) }
+    // An image whose picture does not match, but whose text does.
+    entries[0] = (ids[0], true, FakeEmbedder.vector([5: 1]))
+    entries.append((ids[0], false, FakeEmbedder.vector([0: 1])))
+    let index = SemanticIndex(entries)
+    XCTAssertEqual(index.count, 12)
+    let meaning = index.meaning(FakeEmbedder.vector([0: 1]))
+    XCTAssertEqual(meaning.count, 12)
+    XCTAssertGreaterThan(meaning[ids[0]]!.z, SemanticRanking.meaningGate)
+    // The main vector is the image, so similar versions and groups compare pictures.
+    XCTAssertEqual(index.vector(for: ids[0])?[5] ?? 0, 1, accuracy: 0.001)
+    XCTAssertEqual(SemanticRanking.versions(of: ids[0], in: index), [])
+    XCTAssertEqual(SemanticRanking.groups(ids, in: index), [:])
+  }
+
   func testGroupsAttachNearDuplicatesToTheFirstItem() {
     let ids = ids(4)
     let entries: [(id: UUID, isImage: Bool, vector: [Float])] = [
@@ -208,10 +225,125 @@ final class SemanticHistoryTests: XCTestCase {
 
   private func makeHistory(plan: @escaping @MainActor (String) async throws -> AskSearchPlan = { _ in
     throw AskSearchError.unavailable
-  }) {
+  }, imageText: String? = nil) {
     history?.stop()
-    history = History(repository: HistoryRepository(context: container.mainContext), observePreferences: false,
-                      makeSearchPlan: plan, semantic: embedder)
+    let ocr = OCRService { _ in imageText.map { OCRResult(text: $0, width: 4, height: 4) } }
+    history = History(repository: HistoryRepository(context: container.mainContext), ocr: ocr,
+                      observePreferences: false, makeSearchPlan: plan, semantic: embedder)
+  }
+
+  private func addImage() throws -> HistoryItemDecorator {
+    let png = try XCTUnwrap(NSImage(size: NSSize(width: 4, height: 4), flipped: false) { rect in
+      NSColor.red.setFill(); rect.fill(); return true
+    }.tiffRepresentation)
+    let capture = CapturedCopy(contents: [ContentSnapshot(type: NSPasteboard.PasteboardType.tiff.rawValue, value: png)],
+                               application: nil, copiedAt: Date(), changeCount: 0)
+    return try history.add(ContentProcessor.prepare(capture))
+  }
+
+  private func waitForImageText(_ item: HistoryItemDecorator) async throws {
+    for _ in 0..<200 where item.item.ocrText == nil { try await Task.sleep(for: .milliseconds(10)) }
+    await history.waitForEmbeddings()
+  }
+
+  func testImagesAreFoundByTheMeaningOfTheirText() async throws {
+    Defaults[.ocrInImages] = true
+    embedder.capability = .textAndImages
+    embedder.imageVector = FakeEmbedder.vector([4: 1])
+    embedder.vectors["2 · Paying customers · MailerSend"] = FakeEmbedder.vector([0: 1])
+    embedder.vectors["customer growth"] = FakeEmbedder.vector([0: 0.9, 9: 0.4])
+    makeHistory(imageText: "2 · Paying customers · MailerSend")
+    try addFiller()
+    let chart = try addImage()
+    try await waitForImageText(chart)
+    XCTAssertEqual(chart.item.embeddingSource, "imageocr1")
+    XCTAssertEqual(chart.item.embedding?.count, 2 * 1_536)
+    XCTAssertEqual(history.semanticIndex.count, 11)
+    await ask("customer growth")
+    XCTAssertEqual(history.items.first?.id, chart.id)
+  }
+
+  func testScreenshotsAreNotVersionsOfTextWithTheSameWords() async throws {
+    Defaults[.ocrInImages] = true
+    Defaults[.groupSimilarItems] = true
+    embedder.vectors["Invoice 42"] = FakeEmbedder.vector([3: 1])
+    makeHistory(imageText: "Invoice 42")
+    let text = try add("Invoice 42")
+    let image = try addImage()
+    try await waitForImageText(image)
+    XCTAssertEqual(image.item.embeddingSource, "ocr1")
+    history.refreshSearchResults()
+    await history.waitForGroups()
+    XCTAssertEqual(history.versions(of: image), [])
+    XCTAssertTrue(text.isVisible)
+    XCTAssertTrue(image.isVisible)
+  }
+
+  func testImageTextIsRecognizedAgain() async throws {
+    Defaults[.ocrInImages] = true
+    makeHistory(imageText: "Paying customers")
+    let image = try addImage()
+    try await waitForImageText(image)
+    XCTAssertEqual(image.item.ocrVersion, HistoryItem.currentOCRVersion)
+    // Text from an earlier recognition is replaced by a successful new one.
+    image.item.ocrText = "Pwng customw"
+    image.item.ocrVersion = 0
+    history.backfillOCRIfNeeded()
+    for _ in 0..<200 where image.item.ocrText != "Paying customers" { try await Task.sleep(for: .milliseconds(10)) }
+    XCTAssertEqual(image.item.ocrText, "Paying customers")
+    XCTAssertEqual(image.item.ocrVersion, HistoryItem.currentOCRVersion)
+  }
+
+  func testUnreadableImagesKeepEarlierTextAndAreTriedAgainNextLaunch() async throws {
+    Defaults[.ocrInImages] = true
+    var attempts = 0
+    let ocr = OCRService { _ in attempts += 1; return nil }
+    history = History(repository: HistoryRepository(context: container.mainContext), ocr: ocr,
+                      observePreferences: false, semantic: embedder)
+    let image = try addImage()
+    // The first attempt, for a new image without text, does not mark it.
+    for _ in 0..<200 where attempts < 1 { try await Task.sleep(for: .milliseconds(10)) }
+    try await Task.sleep(for: .milliseconds(50))
+    image.item.ocrText = "Paying customers"
+    image.item.ocrVersion = 0
+    history.backfillOCRIfNeeded()
+    for _ in 0..<200 where attempts < 2 { try await Task.sleep(for: .milliseconds(10)) }
+    try await Task.sleep(for: .milliseconds(50))
+    history.backfillOCRIfNeeded()
+    try await Task.sleep(for: .milliseconds(50))
+    // Not tried again in this session, and still marked for the next launch.
+    XCTAssertEqual(attempts, 2)
+    XCTAssertEqual(image.item.ocrText, "Paying customers")
+    XCTAssertEqual(image.item.ocrVersion, 0)
+  }
+
+  func testChangedImageTextReplacesItsVector() async throws {
+    Defaults[.ocrInImages] = true
+    embedder.vectors["Pwng customw"] = FakeEmbedder.vector([6: 1])
+    embedder.vectors["Paying customers"] = FakeEmbedder.vector([7: 1])
+    makeHistory(imageText: "Pwng customw")
+    let image = try addImage()
+    try await waitForImageText(image)
+    XCTAssertEqual(history.semanticIndex.vector(for: image.id)?[6] ?? 0, 1, accuracy: 0.001)
+    try history.service.setImageMetadata(for: image.item, text: "Paying customers", width: 4, height: 4)
+    XCTAssertNil(image.item.embedding)
+    history.backfillEmbeddingsIfNeeded()
+    await history.waitForEmbeddings()
+    history.refreshSearchResults()
+    XCTAssertEqual(image.item.embeddingSource, "ocr1")
+    XCTAssertEqual(history.semanticIndex.vector(for: image.id)?[7] ?? 0, 1, accuracy: 0.001)
+  }
+
+  func testImageTextIsEmbeddedWithoutTheImageModel() async throws {
+    Defaults[.ocrInImages] = true
+    embedder.vectors["Invoice 42"] = FakeEmbedder.vector([3: 1])
+    makeHistory(imageText: "Invoice 42")
+    let image = try addImage()
+    try await waitForImageText(image)
+    XCTAssertEqual(image.item.embeddingSource, "ocr1")
+    XCTAssertEqual(image.item.embedding?.count, 1_536)
+    XCTAssertEqual(embedder.imageCalls, 0)
+    XCTAssertEqual(history.semanticIndex.vector(for: image.id)?[3] ?? 0, 1, accuracy: 0.001)
   }
 
   @discardableResult

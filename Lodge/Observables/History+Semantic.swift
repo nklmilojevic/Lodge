@@ -42,9 +42,15 @@ extension History {
     return semanticIndex.meaning(vector).mapValues(\.z)
   }
 
+  /// What an item's vectors should come from: "text", "image", "imageocr" (the image and its OCR text), "ocr" (OCR
+  /// text without the image model), or "none", followed by the vector version.
   func desiredEmbeddingSource(_ item: HistoryItem, _ semantic: SemanticEmbedder) -> String? {
     let version = semantic.vectorVersion
-    if item.hasImageContent { return semantic.capability.supportsImages ? "image\(version)" : nil }
+    if item.hasImageContent {
+      let hasText = !Self.imageText(item).isEmpty
+      if semantic.capability.supportsImages { return (hasText ? "imageocr" : "image") + String(version) }
+      return hasText ? "ocr\(version)" : nil
+    }
     let text = item.previewableText.trimmingCharacters(in: .whitespacesAndNewlines)
     return text.isEmpty ? "none\(version)" : "text\(version)"
   }
@@ -71,16 +77,16 @@ extension History {
     }
     guard keys != vectorKeys else { return }
     var entries: [(id: UUID, isImage: Bool, vector: [Float])] = []
+    var imageItems = Set<UUID>()
     for (item, data) in stored {
-      let isImage = item.embeddingSource.hasPrefix("image")
-      if vectorKeys[item.uuid] == keys[item.uuid], let vector = semanticIndex.vector(for: item.uuid) {
-        entries.append((item.uuid, isImage, vector))
-      } else if let vector = SemanticVectors.unpack(data) {
-        entries.append((item.uuid, isImage, vector))
+      if item.hasImageContent { imageItems.insert(item.uuid) }
+      let vectors = SemanticVectors.unpackAll(data)
+      for (index, modality) in Self.modalities(source: item.embeddingSource, count: vectors.count).enumerated() {
+        entries.append((item.uuid, modality, vectors[index]))
       }
     }
     vectorKeys = keys
-    semanticIndex = SemanticIndex(entries)
+    semanticIndex = SemanticIndex(entries, imageItems: imageItems)
     semanticRevision &+= 1
   }
 
@@ -115,17 +121,24 @@ extension History {
         }
         let work = batch.map { item in
           (item: item, fingerprint: item.contentFingerprint, source: self.desiredEmbeddingSource(item, semantic) ?? "",
-           text: String(item.previewableText.prefix(4_000)), image: item.hasImageContent ? item.imageSource : nil)
+           text: String(item.previewableText.prefix(4_000)), image: item.hasImageContent ? item.imageSource : nil,
+           imageText: Self.imageText(item))
         }
         var updates: [(item: HistoryItem, embedding: Data?, source: String)] = []
         do {
           if let first = work.first, first.item.hasImageContent {
-            // An unreadable image keeps no vector and is not tried again.
-            var vector: [Float]?
+            // The image vector, then the OCR text vector. An unreadable image keeps no image vector and is not
+            // tried again.
+            var data = Data()
             do {
-              if let image = first.image { vector = try await semantic.embed(image: image) }
+              if first.source.hasPrefix("image"), let image = first.image {
+                data += SemanticVectors.pack(try await semantic.embed(image: image))
+              }
             } catch SemanticModelError.unreadableImage {}
-            updates.append((first.item, vector.map(SemanticVectors.pack), first.source))
+            if first.source.contains("ocr"), !first.imageText.isEmpty {
+              data += SemanticVectors.pack(try await semantic.embed(documents: [String(first.imageText.prefix(4_000))])[0])
+            }
+            updates.append((first.item, data.isEmpty ? nil : data, first.source))
           } else {
             let texts = work.filter { !$0.source.hasPrefix("none") }
             let vectors = texts.isEmpty ? [] : try await semantic.embed(documents: texts.map(\.text))
@@ -139,8 +152,13 @@ extension History {
           break
         }
         guard !Task.isCancelled else { break }
-        let fingerprints = Dictionary(work.map { ($0.item.uuid, $0.fingerprint) }, uniquingKeysWith: { first, _ in first })
-        let current = updates.filter { fingerprints[$0.item.uuid] == $0.item.contentFingerprint }
+        // Vectors made from content or image text that changed meanwhile are dropped and made again.
+        let snapshots = Dictionary(work.map { ($0.item.uuid, ($0.fingerprint, $0.imageText)) },
+                                   uniquingKeysWith: { first, _ in first })
+        let current = updates.filter { update in
+          guard let snapshot = snapshots[update.item.uuid] else { return false }
+          return snapshot.0 == update.item.contentFingerprint && snapshot.1 == Self.imageText(update.item)
+        }
         do {
           try self.service.setEmbeddings(current)
         } catch {
@@ -161,6 +179,19 @@ extension History {
     let grouped = Defaults[.groupSimilarItems] && searchQuery.isEmpty
     guard asked || grouped else { return }
     semanticRefreshThrottler.throttle { [weak self] in self?.applySearch(selectFirst: false) }
+  }
+
+  static func imageText(_ item: HistoryItem) -> String {
+    (item.ocrText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  /// Whether each stored vector is an image vector. An "imageocr" item whose image could not be read stores only its
+  /// text vector.
+  static func modalities(source: String, count: Int) -> [Bool] {
+    guard count > 0 else { return [] }
+    if source.hasPrefix("imageocr") { return count == 2 ? [true, false] : [false] }
+    if source.hasPrefix("image") { return [true] }
+    return [false]
   }
 
   func needsEmbedding(_ item: HistoryItem, _ semantic: SemanticEmbedder) -> Bool {

@@ -181,8 +181,14 @@ final class HistoryService {
     let previousCount = items.count
     let retained = try repository.transaction(updating: [item]) {
       if let text {
+        // A vector made from different text no longer describes the image.
+        if text != item.ocrText, item.embeddingSource.contains("ocr") || item.embedding == nil {
+          item.embedding = nil
+          item.embeddingSource = ""
+        }
         item.ocrText = text
         item.normalizedOCRText = normalizedText
+        item.ocrVersion = HistoryItem.currentOCRVersion
       }
       item.payloadByteCount = byteCount
       item.imageWidth = width

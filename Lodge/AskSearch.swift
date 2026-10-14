@@ -24,6 +24,43 @@ struct AskSearchPlan: Sendable {
     return host
   }
 
+  private static let kindWords: [Kind: Set<String>] = [
+    .image: ["image", "images", "picture", "pictures", "photo", "photos", "screenshot", "screenshots", "pic", "pics",
+             "png", "jpg", "jpeg", "gif", "heic", "img", "webp", "bmp", "tiff", "tif"],
+    .text: ["text", "texts", "note", "notes", "snippet", "snippets", "paragraph", "paragraphs", "sentence", "sentences"],
+    .link: ["link", "links", "url", "urls", "website", "websites", "site", "sites", "web", "http", "https"]
+  ]
+
+  /// The model sometimes picks a content type the request never asked for, such as text for "paying customers",
+  /// which would hide matching images. A type counts only when the request names it, or names a website for links.
+  /// The source app's name is not evidence ("from Notes" is not a request for notes), and text inside an image
+  /// ("text in screenshot") is not a request for text items.
+  static func kind(_ kind: Kind, supportedBy query: String, domain: String?, application: String? = nil) -> Kind {
+    guard kind != .any else { return .any }
+    if kind == .link && domain != nil { return .link }
+    func words(_ text: String) -> Set<String> {
+      Set(text.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty })
+    }
+    var request = query
+    if let application, !application.isEmpty,
+       let mention = query.range(of: "from " + application, options: [.caseInsensitive, .diacriticInsensitive]) ??
+         query.range(of: application, options: [.caseInsensitive, .diacriticInsensitive]) {
+      request.removeSubrange(mention)
+    }
+    let named = words(request)
+    guard let evidence = kindWords[kind], !evidence.isDisjoint(with: named) else { return .any }
+    if kind == .text, asksForTextInImage(request) { return .any }
+    return kind
+  }
+
+  /// "text in screenshot", "words on the image": text inside an image, not text items. "notes about screenshots"
+  /// still asks for notes.
+  private static func asksForTextInImage(_ request: String) -> Bool {
+    let images = (kindWords[.image] ?? []).sorted().joined(separator: "|")
+    let pattern = "\\b(text|texts|words|writing)\\s+(in|inside|on|within|from)\\s+(the\\s+|a\\s+|an\\s+|my\\s+)?(\(images))\\b"
+    return request.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+  }
+
   static func hasEvidence(_ evidence: String?, in query: String) -> Bool {
     guard let evidence else { return false }
     let phrase = evidence.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -186,7 +223,8 @@ enum AskSearch {
     guard terms.count <= 12, terms.allSatisfy({ $0.count <= 200 }) else { throw AskSearchError.invalidPlan }
     let application = AskSearchPlan.hasEvidence(generated.application, in: query) ? generated.application : nil
     return AskSearchPlan(terms: terms, application: application,
-                         kind: AskSearchPlan.Kind(rawValue: generated.kind.rawValue) ?? .any,
+                         kind: AskSearchPlan.kind(AskSearchPlan.Kind(rawValue: generated.kind.rawValue) ?? .any,
+                                                  supportedBy: query, domain: domain, application: application),
                          startDate: start, endDate: end, domain: domain)
   }
 

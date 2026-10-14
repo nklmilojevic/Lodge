@@ -54,6 +54,10 @@ class HistoryItem {
   var pin: String?
   var title = ""
   var ocrText: String?
+  /// The recognition that produced `ocrText`. Images below `currentOCRVersion` are recognized again, and their
+  /// earlier text stays until the new recognition succeeds.
+  var ocrVersion: Int = 0
+  static let currentOCRVersion = 1
   var contentFingerprint = ""
   // A 768-value float16 vector for semantic search, and what produced it, such as "text1".
   var embedding: Data?
@@ -90,6 +94,7 @@ class HistoryItem {
     let pin = pin
     let title = title
     let ocrText = ocrText
+    let ocrVersion = ocrVersion
     let contentFingerprint = contentFingerprint
     let embedding = embedding
     let embeddingSource = embeddingSource
@@ -114,6 +119,7 @@ class HistoryItem {
       self.pin = pin
       self.title = title
       self.ocrText = ocrText
+      self.ocrVersion = ocrVersion
       self.contentFingerprint = contentFingerprint
       self.embedding = embedding
       self.embeddingSource = embeddingSource
