@@ -22,11 +22,11 @@ class About {
   }
 
   private var semanticCredits: NSMutableAttributedString {
-    let text = "Semantic search uses EmbeddingGemma 2, llama.cpp, and code adapted from DigUp."
+    let text = "Semantic search uses EmbeddingGemma 2 in FluidInference's Core ML conversion, and code adapted from DigUp."
     let string = NSMutableAttributedString(string: text,
                                            attributes: [NSAttributedString.Key.foregroundColor: NSColor.labelColor])
     let links = [("EmbeddingGemma 2", "https://huggingface.co/google/embeddinggemma-2"),
-                 ("llama.cpp", "https://github.com/ggml-org/llama.cpp"),
+                 ("FluidInference's Core ML conversion", "https://huggingface.co/FluidInference/embeddinggemma-2-coreml"),
                  ("DigUp", "https://github.com/ARahim3/DigUp")]
     for (name, url) in links {
       string.addAttribute(.link, value: url, range: (text as NSString).range(of: name))

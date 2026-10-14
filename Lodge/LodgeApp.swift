@@ -1,6 +1,14 @@
 import SwiftUI
 
+/// The same binary runs the app or, with `--embedding-helper`, the semantic search model.
 @main
+enum LodgeMain {
+  static func main() {
+    if EmbeddingHelper.requested { EmbeddingHelper.main() }
+    LodgeApp.main()
+  }
+}
+
 struct LodgeApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 

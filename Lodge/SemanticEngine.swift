@@ -1,5 +1,6 @@
 import AppKit
-import LlamaEmbedding
+import CoreML
+import CryptoKit
 import Observation
 
 enum SemanticCapability: Equatable, Sendable {
@@ -22,6 +23,91 @@ protocol SemanticEmbedder: AnyObject {
   func embed(image: ImageSource) async throws -> [Float]
 }
 
+/// The pinned EmbeddingGemma 2 Core ML files (FluidInference/embeddinggemma-2-coreml, Apache 2.0), and where they live.
+struct SemanticModelFiles: Sendable {
+  static let repository = "FluidInference/embeddinggemma-2-coreml"
+  static let revision = "3f978ddf92cac9aa07eb2dcf6eb36cf450f3dba4"
+  /// Changes whenever the vectors change: the model, the tokenizer, image preparation, or the prompts.
+  static let vectorVersion = 2
+  static let documentPrompt = "title: none | text: "
+  static let queryPrompt = "task: search result | query: "
+
+  struct File: Sendable, Equatable {
+    let path: String
+    let bytes: Int64
+    let sha256: String
+
+    var url: URL {
+      URL(string: "https://huggingface.co/\(SemanticModelFiles.repository)/resolve/\(SemanticModelFiles.revision)/\(path)")!
+    }
+  }
+
+  static let textPackage = "EmbeddingGemma2Text.mlpackage"
+  static let visionPackage = "EmbeddingGemma2Vision.mlpackage"
+  static let tokenizer = "tokenizer.json"
+  static let tokenTable = "embeddings.bf16"
+  static let positionTable = "position_embeddings.f16"
+
+  static let text = [
+    File(path: tokenizer, bytes: 32_170_510,
+         sha256: "4d777ef5bdc1aa36227abdfb77c3e49e7b9c892d16e1b6bda41c393504828be4"),
+    File(path: tokenTable, bytes: 268_435_456,
+         sha256: "56ebbdbfd706c827f3fae1d97aa39135c7ddc0f1e6d9b12f8565f84bbfbda877"),
+    File(path: "\(textPackage)/Manifest.json", bytes: 617,
+         sha256: "83eace80b69b46f8415af620ba1b40d7c490d00f7c00ba9dedd2e29da6e9ac19"),
+    File(path: "\(textPackage)/Data/com.apple.CoreML/model.mlmodel", bytes: 7_323_423,
+         sha256: "0df9aca02807cf490db6d4f1c68607a8c7f486ad23b376d1968fd3be5eb14677"),
+    File(path: "\(textPackage)/Data/com.apple.CoreML/weights/weight.bin", bytes: 276_815_424,
+         sha256: "75b97ab036ca87eae60560c4034a63d604201498dc4b6f6971dd0b1e4558d61f")
+  ]
+  static let images = [
+    File(path: positionTable, bytes: 3_145_728,
+         sha256: "17de9480acc23638c0634a97ed89e51ed664433256d7d6f109587dcd91c79124"),
+    File(path: "\(visionPackage)/Manifest.json", bytes: 617,
+         sha256: "376afe7b51608637312cd15a0a89b1d7863f9779502aaf5f12fa6b14c4272d8d"),
+    File(path: "\(visionPackage)/Data/com.apple.CoreML/model.mlmodel", bytes: 2_053_174,
+         sha256: "0085b5e04a13d000fe5969adeaa13d897f5a3cb7be60c76c8685c023747f89ef"),
+    File(path: "\(visionPackage)/Data/com.apple.CoreML/weights/weight.bin", bytes: 304_078_400,
+         sha256: "5b5b6dd8d80aa438bf91ba143fbe90d56a2e25bfcf685a56b990aad71cf75232")
+  ]
+  static var textBytes: Int64 { text.reduce(0) { $0 + $1.bytes } }
+  static var imageBytes: Int64 { images.reduce(0) { $0 + $1.bytes } }
+
+  let folder: URL
+
+  func url(for path: String) -> URL { folder.appending(path: path) }
+
+  func installed(_ files: [File]) -> Bool {
+    files.allSatisfy { FileManager.default.fileExists(atPath: url(for: $0.path).path) }
+  }
+
+  /// The compiled model, cached beside the package so later launches skip compilation.
+  func compiled(_ package: String) async throws -> URL {
+    let destination = folder.appending(path: "Compiled/\((package as NSString).deletingPathExtension).mlmodelc")
+    if FileManager.default.fileExists(atPath: destination.path) { return destination }
+    let temporary = try await MLModel.compileModel(at: url(for: package))
+    try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try? FileManager.default.removeItem(at: destination)
+    try FileManager.default.moveItem(at: temporary, to: destination)
+    return destination
+  }
+
+  static func sha256(of url: URL) throws -> String {
+    let handle = try FileHandle(forReadingFrom: url)
+    defer { try? handle.close() }
+    var hasher = SHA256()
+    while true {
+      let done = try autoreleasepool { () -> Bool in
+        guard let data = try handle.read(upToCount: 8 << 20), !data.isEmpty else { return true }
+        hasher.update(data: data)
+        return false
+      }
+      if done { break }
+    }
+    return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+  }
+}
+
 /// The EmbeddingGemma 2 files in Application Support. Nothing is downloaded until the user asks.
 @Observable
 @MainActor
@@ -35,7 +121,7 @@ final class SemanticModelStore {
     case failed(String)
   }
 
-  let folder: URL
+  let files: SemanticModelFiles
   private(set) var phase: Phase = .idle
   private(set) var textInstalled = false
   private(set) var imagesInstalled = false
@@ -43,26 +129,28 @@ final class SemanticModelStore {
   @ObservationIgnored private var installGeneration: UInt64 = 0
   @ObservationIgnored private var download: FileDownload?
 
+  /// Core ML multi-function models need macOS 15. The text model runs on the Neural Engine of Apple silicon.
   static var isSupported: Bool {
     #if arch(arm64)
-    return true
-    #else
-    return false
+    if #available(macOS 15, *) { return true }
     #endif
+    return false
   }
 
-  init(folder: URL = URL.applicationSupportDirectory.appending(path: "Lodge/Models")) {
-    self.folder = folder
+  static let modelsFolder = URL.applicationSupportDirectory.appending(path: "Lodge/Models")
+
+  init(folder: URL = SemanticModelStore.modelsFolder.appending(path: "embeddinggemma-2-coreml")) {
+    files = SemanticModelFiles(folder: folder)
     refresh()
   }
+
+  var folder: URL { files.folder }
 
   var capability: SemanticCapability {
     guard Self.isSupported, textInstalled else { return .none }
     return imagesInstalled ? .textAndImages : .text
   }
 
-  var textURL: URL { folder.appending(path: EmbeddingModelFiles.text.name) }
-  var mediaURL: URL? { imagesInstalled ? folder.appending(path: EmbeddingModelFiles.media.name) : nil }
   var isBusy: Bool {
     switch phase {
     case .downloading, .verifying: return true
@@ -71,20 +159,38 @@ final class SemanticModelStore {
   }
 
   func refresh() {
-    let fileManager = FileManager.default
-    textInstalled = fileManager.fileExists(atPath: folder.appending(path: EmbeddingModelFiles.text.name).path)
-    imagesInstalled = textInstalled &&
-      fileManager.fileExists(atPath: folder.appending(path: EmbeddingModelFiles.media.name).path)
+    textInstalled = files.installed(SemanticModelFiles.text)
+    imagesInstalled = textInstalled && files.installed(SemanticModelFiles.images)
+  }
+
+  /// Lodge 2.1 used llama.cpp GGUF files beside this model's folder. Removes them and, because the user opted in
+  /// then, downloads the Core ML model with the same image choice.
+  func migrateLegacyModel() {
+    if let images = removeLegacyModel() { install(images: images) }
+  }
+
+  /// Returns whether the removed legacy model included images, or nil when there was none.
+  func removeLegacyModel() -> Bool? {
+    let legacy = folder.deletingLastPathComponent()
+    let text = legacy.appending(path: "embeddinggemma-2-Q8_0.gguf")
+    let media = legacy.appending(path: "mmproj-embeddinggemma-2-Q8_0.gguf")
+    guard FileManager.default.fileExists(atPath: text.path) else { return nil }
+    let images = FileManager.default.fileExists(atPath: media.path)
+    try? FileManager.default.removeItem(at: text)
+    try? FileManager.default.removeItem(at: media)
+    return images
   }
 
   /// Downloads the text model, and the image model when `images` is true.
   func install(images: Bool) {
     guard Self.isSupported, !isBusy else { return }
-    var files: [EmbeddingModelFiles.File] = []
-    if !textInstalled { files.append(EmbeddingModelFiles.text) }
-    if images && !imagesInstalled { files.append(EmbeddingModelFiles.media) }
-    guard !files.isEmpty else { return }
-    let total = files.reduce(0) { $0 + $1.bytes }
+    var pending: [SemanticModelFiles.File] = []
+    if !textInstalled { pending += SemanticModelFiles.text }
+    if images && !imagesInstalled { pending += SemanticModelFiles.images }
+    pending = pending.filter { !FileManager.default.fileExists(atPath: files.url(for: $0.path).path) }
+    guard !pending.isEmpty else { return refresh() }
+    let total = pending.reduce(0) { $0 + $1.bytes }
+    let files = files
     phase = .downloading(fraction: 0)
     installGeneration &+= 1
     let generation = installGeneration
@@ -93,12 +199,12 @@ final class SemanticModelStore {
       var completed: Int64 = 0
       let outcome: Phase
       do {
-        try FileManager.default.createDirectory(at: self.folder, withIntermediateDirectories: true)
-        var folder = self.folder
+        try FileManager.default.createDirectory(at: files.folder, withIntermediateDirectories: true)
+        var folder = files.folder
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
         try? folder.setResourceValues(values)
-        for file in files {
+        for file in pending {
           let offset = completed
           let download = FileDownload(url: file.url) { [weak self] written in
             Task { @MainActor in
@@ -112,16 +218,17 @@ final class SemanticModelStore {
             try? FileManager.default.removeItem(at: temporary)
             throw CancellationError()
           }
-          self.phase = .verifying
-          let destination = self.folder.appending(path: file.name)
-          let staged = self.folder.appending(path: file.name + ".partial")
+          let destination = files.url(for: file.path)
+          let staged = destination.appendingPathExtension("partial")
           // Verify and stage on the destination volume, then commit only if no cancel or removal superseded this install.
           try await Task.detached(priority: .utility) {
             defer { try? FileManager.default.removeItem(at: temporary) }
             let size = try temporary.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-            guard Int64(size) == file.bytes, try EmbeddingModelFiles.sha256(of: temporary) == file.sha256 else {
+            guard Int64(size) == file.bytes, try SemanticModelFiles.sha256(of: temporary) == file.sha256 else {
               throw SemanticModelError.verification
             }
+            try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(),
+                                                    withIntermediateDirectories: true)
             if FileManager.default.fileExists(atPath: staged.path) { try FileManager.default.removeItem(at: staged) }
             try FileManager.default.moveItem(at: temporary, to: staged)
           }.value
@@ -138,7 +245,6 @@ final class SemanticModelStore {
           }
           completed += file.bytes
           self.phase = .downloading(fraction: Double(completed) / Double(total))
-          self.refresh()
         }
         outcome = .idle
       } catch is CancellationError {
@@ -173,19 +279,23 @@ final class SemanticModelStore {
   /// Removes the image model only, or every model file.
   func remove(imagesOnly: Bool) {
     cancel()
-    SemanticEngine.shared.unload()
-    try? FileManager.default.removeItem(at: folder.appending(path: EmbeddingModelFiles.media.name))
-    if !imagesOnly { try? FileManager.default.removeItem(at: folder.appending(path: EmbeddingModelFiles.text.name)) }
+    SemanticEngine.shared.stop()
+    let fileManager = FileManager.default
+    for file in SemanticModelFiles.images { try? fileManager.removeItem(at: files.url(for: file.path)) }
+    try? fileManager.removeItem(at: files.url(for: SemanticModelFiles.visionPackage))
+    try? fileManager.removeItem(at: files.url(for: "Compiled/EmbeddingGemma2Vision.mlmodelc"))
+    if !imagesOnly { try? fileManager.removeItem(at: files.folder) }
     phase = .idle
     refresh()
     NotificationCenter.default.post(name: .semanticModelChanged, object: nil)
   }
 }
 
-enum SemanticModelError: Error {
+enum SemanticModelError: Error, Equatable {
   case verification
   case unavailable
   case unreadableImage
+  case helper(String)
 }
 
 extension Notification.Name {
@@ -265,134 +375,64 @@ private final class FileDownload: NSObject, URLSessionDownloadDelegate, @uncheck
   }
 }
 
-/// Runs EmbeddingGemma 2 on a serial queue. The model loads on first use and unloads after two idle minutes.
+
+/// The app's side of semantic search. Vectors come from the embedding helper process, so the model's memory and any
+/// model crash stay out of the app.
 @MainActor
 final class SemanticEngine: SemanticEmbedder {
   static let shared = SemanticEngine()
 
-  private let worker = EmbeddingWorker()
   private let store: SemanticModelStore
+  private let helper: EmbeddingHelperClient
 
-  init(store: SemanticModelStore? = nil) { self.store = store ?? .shared }
-
-  var capability: SemanticCapability { store.capability }
-  var vectorVersion: Int { LlamaEmbedder.vectorVersion }
-
-  func prepare() {
-    guard capability != .none else { return }
-    let text = store.textURL
-    worker.run { _ = try $0.embedder(text: text, media: nil, images: false) }
+  init(store: SemanticModelStore? = nil) {
+    self.store = store ?? .shared
+    helper = EmbeddingHelperClient(folder: self.store.folder)
   }
 
-  func unload() { worker.run { $0.unload() } }
+  var capability: SemanticCapability { store.capability }
+  var vectorVersion: Int { SemanticModelFiles.vectorVersion }
+
+  /// Starts the helper and loads the text model, so the first query does not wait for it.
+  func prepare() {
+    guard capability != .none else { return }
+    Task { _ = try? await helper.send(EmbeddingRequest(kind: .prepare)) }
+  }
+
+  func stop() { helper.stop() }
 
   func embed(query: String) async throws -> [Float] {
-    try await embed(prompts: [EmbeddingPrompts.query(query)])[0]
+    try await embed(texts: [SemanticModelFiles.queryPrompt + query])[0]
   }
 
   func embed(documents: [String]) async throws -> [[Float]] {
-    try await embed(prompts: documents.map(EmbeddingPrompts.document))
+    try await embed(texts: documents.map { SemanticModelFiles.documentPrompt + $0 })
   }
 
   func embed(image: ImageSource) async throws -> [Float] {
-    guard capability.supportsImages, let media = store.mediaURL else { throw SemanticModelError.unavailable }
-    let text = store.textURL
-    return try await worker.perform { state in
-      guard let pixels = EmbeddingImage.pixels(image) else { throw SemanticModelError.unreadableImage }
-      return try state.embedder(text: text, media: media, images: true)
-        .embed(rgb: pixels.data, width: pixels.width, height: pixels.height)
+    guard capability.supportsImages else { throw SemanticModelError.unavailable }
+    var request = EmbeddingRequest(kind: .image)
+    var temporary: URL?
+    switch image {
+    case .file(let url): request.path = url.path
+    case .data(let data):
+      // Image data goes through a private temporary file rather than the pipe.
+      let url = FileManager.default.temporaryDirectory.appending(path: "LodgeEmbedding-\(UUID().uuidString)")
+      try data.write(to: url, options: .atomic)
+      temporary = url
+      request.path = url.path
     }
+    defer { if let temporary { try? FileManager.default.removeItem(at: temporary) } }
+    guard let vector = try await helper.send(request).first else { throw SemanticModelError.unavailable }
+    return vector
   }
 
-  private func embed(prompts: [String]) async throws -> [[Float]] {
+  private func embed(texts: [String]) async throws -> [[Float]] {
     guard capability != .none else { throw SemanticModelError.unavailable }
-    let text = store.textURL
-    return try await worker.perform { try $0.embedder(text: text, media: nil, images: false).embed(texts: prompts) }
-  }
-}
-
-/// Owns the loaded model. Every access happens on its queue.
-private final class EmbeddingWorker: @unchecked Sendable {
-  final class State {
-    private var embedder: LlamaEmbedder?
-    private var loadedText: URL?
-    fileprivate var idle: DispatchWorkItem?
-
-    /// A loaded image model also serves text, so text requests keep it.
-    func embedder(text: URL, media: URL?, images: Bool) throws -> LlamaEmbedder {
-      if let embedder, loadedText == text, embedder.supportsImages || !images { return embedder }
-      unload()
-      let embedder = try LlamaEmbedder(text: text, media: images ? media : nil)
-      self.embedder = embedder
-      loadedText = text
-      return embedder
-    }
-
-    func unload() {
-      embedder?.close()
-      embedder = nil
-      loadedText = nil
-    }
-  }
-
-  private let queue = DispatchQueue(label: "com.nklmilojevic.Lodge.embedding", qos: .utility)
-  private let state = State()
-
-  func run(_ work: @escaping @Sendable (State) throws -> Void) {
-    queue.async { [self] in
-      try? work(state)
-      scheduleUnload()
-    }
-  }
-
-  func perform<T: Sendable>(_ work: @escaping @Sendable (State) throws -> T) async throws -> T {
-    try await withCheckedThrowingContinuation { continuation in
-      queue.async { [self] in
-        continuation.resume(with: Result { try autoreleasepool { try work(state) } })
-        scheduleUnload()
-      }
-    }
-  }
-
-  private func scheduleUnload() {
-    state.idle?.cancel()
-    let item = DispatchWorkItem { [state] in state.unload() }
-    state.idle = item
-    queue.asyncAfter(deadline: .now() + 120, execute: item)
-  }
-}
-
-/// Decodes an image into the packed RGB pixels the vision encoder expects, on a white background.
-enum EmbeddingImage {
-  static func pixels(_ source: ImageSource) -> (data: [UInt8], width: Int, height: Int)? {
-    guard let result = ImageProcessor.thumbnail(source, maxDimension: 2048) else { return nil }
-    let image = result.image
-    let width = image.width, height = image.height
-    guard let target = ImageSizing.targetSize(height: height, width: width, budget: LlamaEmbedder.imageBudget) else {
-      return nil
-    }
-    var rgba = [UInt8](repeating: 255, count: width * height * 4)
-    let drawn = rgba.withUnsafeMutableBytes { buffer -> Bool in
-      guard let context = CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
-                                    bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
-      context.setFillColor(CGColor(gray: 1, alpha: 1))
-      context.fill(CGRect(x: 0, y: 0, width: width, height: height))
-      context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-      return true
-    }
-    guard drawn else { return nil }
-    var rgb = [UInt8](repeating: 0, count: width * height * 3)
-    for pixel in 0..<(width * height) {
-      rgb[pixel * 3] = rgba[pixel * 4]
-      rgb[pixel * 3 + 1] = rgba[pixel * 4 + 1]
-      rgb[pixel * 3 + 2] = rgba[pixel * 4 + 2]
-    }
-    guard target != (height, width) else { return (rgb, width, height) }
-    let resized = rgb.withUnsafeBufferPointer {
-      ImageSizing.resizeBicubic($0.baseAddress!, width: width, height: height, toWidth: target.width,
-                                toHeight: target.height)
-    }
-    return (resized, target.width, target.height)
+    var request = EmbeddingRequest(kind: .text)
+    request.texts = texts
+    let vectors = try await helper.send(request)
+    guard vectors.count == texts.count else { throw SemanticModelError.unavailable }
+    return vectors
   }
 }

@@ -58,6 +58,8 @@
 		DA384E86232746D800603999 /* SearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA384E85232746D800603999 /* SearchTests.swift */; };
 		5E000000000000000000000A /* SemanticSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E000000000000000000000B /* SemanticSearchTests.swift */; };
 		5E000000000000000000000C /* SemanticModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E000000000000000000000D /* SemanticModelTests.swift */; };
+		5E1000000000000000000009 /* GemmaTokenizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E100000000000000000000A /* GemmaTokenizerTests.swift */; };
+		5E100000000000000000000B /* tokenizer-fixtures.json in Resources */ = {isa = PBXBuildFile; fileRef = 5E100000000000000000000C /* tokenizer-fixtures.json */; };
 		DA3BCB8E2C3E015000B01BC1 /* ModifierFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA3BCB8D2C3E015000B01BC1 /* ModifierFlags.swift */; };
 		DA3BCB922C3EEC3C00B01BC1 /* History.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA3BCB912C3EEC3C00B01BC1 /* History.swift */; };
 		5E0000000000000000000005 /* History+Semantic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E0000000000000000000006 /* History+Semantic.swift */; };
@@ -123,6 +125,10 @@
 		DAC14124232367B200FCFA30 /* Search.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAC14123232367B200FCFA30 /* Search.swift */; };
 		AB0918202600000000000001 /* AskSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0918202600000000000002 /* AskSearch.swift */; };
 		5E0000000000000000000003 /* SemanticEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E0000000000000000000004 /* SemanticEngine.swift */; };
+		5E1000000000000000000007 /* ImageSizing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E1000000000000000000008 /* ImageSizing.swift */; };
+		5E1000000000000000000005 /* EmbeddingHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E1000000000000000000006 /* EmbeddingHelper.swift */; };
+		5E1000000000000000000003 /* CoreMLEmbedder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E1000000000000000000004 /* CoreMLEmbedder.swift */; };
+		5E1000000000000000000001 /* GemmaTokenizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E1000000000000000000002 /* GemmaTokenizer.swift */; };
 		5E0000000000000000000001 /* SemanticSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E0000000000000000000002 /* SemanticSearch.swift */; };
 		DAC929D7297A0E8B00814F19 /* NSPasteboard.PasteboardType+Types.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAC929D6297A0E8B00814F19 /* NSPasteboard.PasteboardType+Types.swift */; };
 		DAD665662898A1C000975096 /* KeyChord.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAD665652898A1C000975096 /* KeyChord.swift */; };
@@ -142,7 +148,6 @@
 		046B66002DC84C959F3C4E49 /* PerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF206631FD064BBB90E33D03 /* PerformanceTests.swift */; };
 		217A66B838C44E3197938645 /* ThrottlerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0C13670D3374765B4C963B6 /* ThrottlerTests.swift */; };
 		929D361FD8874DF5B1AE5F48 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = 45FC5D8B1E9E4A7390E7FB5B /* SwiftSoup */; };
-		5E0000000000000000000007 /* LlamaEmbedding in Frameworks */ = {isa = PBXBuildFile; productRef = 5E0000000000000000000008 /* LlamaEmbedding */; };
 		D6629085BD6F4C559C8D5ED5 /* Performance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 619B5C83191F48CF9B1B3237 /* Performance.swift */; };
 		860FFAFDB4704A719D60AD16 /* MigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A660FBC3AB5142F8AFC17C3A /* MigrationTests.swift */; };
 /* End PBXBuildFile section */
@@ -259,6 +264,8 @@
 		DA384E85232746D800603999 /* SearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchTests.swift; sourceTree = "<group>"; };
 		5E000000000000000000000B /* SemanticSearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SemanticSearchTests.swift; sourceTree = "<group>"; };
 		5E000000000000000000000D /* SemanticModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SemanticModelTests.swift; sourceTree = "<group>"; };
+		5E100000000000000000000A /* GemmaTokenizerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GemmaTokenizerTests.swift; sourceTree = "<group>"; };
+		5E100000000000000000000C /* tokenizer-fixtures.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "tokenizer-fixtures.json"; sourceTree = "<group>"; };
 		DA3873FA2D09EB7600E7B251 /* be */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = be; path = be.lproj/AdvancedSettings.strings; sourceTree = "<group>"; };
 		DA3873FB2D09EB7600E7B251 /* be */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = be; path = be.lproj/AppearanceSettings.strings; sourceTree = "<group>"; };
 		DA3873FC2D09EB7600E7B251 /* be */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = be; path = be.lproj/GeneralSettings.strings; sourceTree = "<group>"; };
@@ -509,6 +516,10 @@
 		DAC14123232367B200FCFA30 /* Search.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Search.swift; sourceTree = "<group>"; };
 		AB0918202600000000000002 /* AskSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AskSearch.swift; sourceTree = "<group>"; };
 		5E0000000000000000000004 /* SemanticEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SemanticEngine.swift; sourceTree = "<group>"; };
+		5E1000000000000000000008 /* ImageSizing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageSizing.swift; sourceTree = "<group>"; };
+		5E1000000000000000000006 /* EmbeddingHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbeddingHelper.swift; sourceTree = "<group>"; };
+		5E1000000000000000000004 /* CoreMLEmbedder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreMLEmbedder.swift; sourceTree = "<group>"; };
+		5E1000000000000000000002 /* GemmaTokenizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GemmaTokenizer.swift; sourceTree = "<group>"; };
 		5E0000000000000000000002 /* SemanticSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SemanticSearch.swift; sourceTree = "<group>"; };
 		DAC929D6297A0E8B00814F19 /* NSPasteboard.PasteboardType+Types.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSPasteboard.PasteboardType+Types.swift"; sourceTree = "<group>"; };
 		DACCD5822C93605C00BAD74C /* Lodge.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = Lodge.xctestplan; sourceTree = "<group>"; };
@@ -559,7 +570,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				929D361FD8874DF5B1AE5F48 /* SwiftSoup in Frameworks */,
-				5E0000000000000000000007 /* LlamaEmbedding in Frameworks */,
 				2F39CB042AD9A93C00B749FD /* Sparkle in Frameworks */,
 				DA009955256414E60030E697 /* KeyboardShortcuts in Frameworks */,
 				DAC0CA3E2C88E7A4003BF498 /* Fuse in Frameworks */,
@@ -692,6 +702,7 @@
 				DA384E85232746D800603999 /* SearchTests.swift */,
 				5E000000000000000000000B /* SemanticSearchTests.swift */,
 				5E000000000000000000000D /* SemanticModelTests.swift */,
+				5E100000000000000000000A /* GemmaTokenizerTests.swift */,
 				DA696BD12401EEE900DE80CF /* SorterTests.swift */,
 				DA360DB41E3DF137005C6F6B /* Info.plist */,
 			);
@@ -717,6 +728,7 @@
 			isa = PBXGroup;
 			children = (
 				DA48AE882A5F0548006D4894 /* guy.jpeg */,
+				5E100000000000000000000C /* tokenizer-fixtures.json */,
 			);
 			path = Fixtures;
 			sourceTree = "<group>";
@@ -804,6 +816,10 @@
 				DAC14123232367B200FCFA30 /* Search.swift */,
 				AB0918202600000000000002 /* AskSearch.swift */,
 				5E0000000000000000000004 /* SemanticEngine.swift */,
+				5E1000000000000000000008 /* ImageSizing.swift */,
+				5E1000000000000000000006 /* EmbeddingHelper.swift */,
+				5E1000000000000000000004 /* CoreMLEmbedder.swift */,
+				5E1000000000000000000002 /* GemmaTokenizer.swift */,
 				5E0000000000000000000002 /* SemanticSearch.swift */,
 				2F1A79BF2C6DFB7800C98EBD /* SearchVisibility.swift */,
 				DAA5ACC92C1BEE8A00B58513 /* SoftwareUpdater.swift */,
@@ -855,7 +871,6 @@
 			name = Lodge;
 			packageProductDependencies = (
 				45FC5D8B1E9E4A7390E7FB5B /* SwiftSoup */,
-				5E0000000000000000000008 /* LlamaEmbedding */,
 				DA5154D72564102900C01004 /* Sauce */,
 				DA009946256414800030E697 /* SwiftHEXColors */,
 				DA009954256414E60030E697 /* KeyboardShortcuts */,
@@ -942,7 +957,6 @@
 				DA13D7CE2C19F8C300FA9E23 /* XCRemoteSwiftPackageReference "Defaults" */,
 				DAC0CA3C2C88E7A4003BF498 /* XCRemoteSwiftPackageReference "fuse-swift" */,
 				2F12271C2E5C932200A1592A /* XCRemoteSwiftPackageReference "swift-log" */,
-				5E0000000000000000000009 /* XCLocalSwiftPackageReference "Packages/LlamaEmbedding" */,
 			);
 			productRefGroup = DAEE38441E3DBEB100DD2966 /* Products */;
 			projectDirPath = "";
@@ -960,6 +974,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				DA48AE892A5F0548006D4894 /* guy.jpeg in Resources */,
+				5E100000000000000000000B /* tokenizer-fixtures.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1003,6 +1018,7 @@
 				DA384E86232746D800603999 /* SearchTests.swift in Sources */,
 				5E000000000000000000000A /* SemanticSearchTests.swift in Sources */,
 				5E000000000000000000000C /* SemanticModelTests.swift in Sources */,
+				5E1000000000000000000009 /* GemmaTokenizerTests.swift in Sources */,
 				DA696BD22401EEE900DE80CF /* SorterTests.swift in Sources */,
 				DA360DB31E3DF137005C6F6B /* HistoryTests.swift in Sources */,
 			);
@@ -1097,6 +1113,10 @@
 				DAC14124232367B200FCFA30 /* Search.swift in Sources */,
 				AB0918202600000000000001 /* AskSearch.swift in Sources */,
 				5E0000000000000000000003 /* SemanticEngine.swift in Sources */,
+				5E1000000000000000000007 /* ImageSizing.swift in Sources */,
+				5E1000000000000000000005 /* EmbeddingHelper.swift in Sources */,
+				5E1000000000000000000003 /* CoreMLEmbedder.swift in Sources */,
+				5E1000000000000000000001 /* GemmaTokenizer.swift in Sources */,
 				5E0000000000000000000001 /* SemanticSearch.swift in Sources */,
 				DA0FFA2A2C8D100C00A66C97 /* ModifierFlags+Description.swift in Sources */,
 				DAEE38471E3DBEB100DD2966 /* AppDelegate.swift in Sources */,
@@ -1777,12 +1797,6 @@
 		};
 /* End XCRemoteSwiftPackageReference section */
 
-/* Begin XCLocalSwiftPackageReference section */
-		5E0000000000000000000009 /* XCLocalSwiftPackageReference "Packages/LlamaEmbedding" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = Packages/LlamaEmbedding;
-		};
-/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		2F12271D2E5C932200A1592A /* Logging */ = {
@@ -1834,10 +1848,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 278DE858821A4AAAB21C80BD /* XCRemoteSwiftPackageReference "SwiftSoup" */;
 			productName = SwiftSoup;
-		};
-		5E0000000000000000000008 /* LlamaEmbedding */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = LlamaEmbedding;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

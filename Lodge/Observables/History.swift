@@ -63,7 +63,7 @@ final class History {
   @ObservationIgnored var groupTask: Task<Void, Never>?
   @ObservationIgnored var pendingGroups: (revision: UInt64, order: [UUID])?
   @ObservationIgnored let semanticRefreshThrottler = Throttler(minimumDelay: 0.5)
-  @ObservationIgnored var neighborCache: (id: UUID, revision: UInt64, versions: [UUID], related: [UUID])?
+  @ObservationIgnored var versionCache: (id: UUID, revision: UInt64, versions: [UUID])?
   @ObservationIgnored private var askSemanticText: String?
   @ObservationIgnored private let search = Search()
   @ObservationIgnored private let makeSearchPlan: @MainActor (String) async throws -> AskSearchPlan

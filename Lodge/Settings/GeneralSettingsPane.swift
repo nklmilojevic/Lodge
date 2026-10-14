@@ -2,7 +2,6 @@ import SwiftUI
 import Defaults
 import KeyboardShortcuts
 import LaunchAtLogin
-import LlamaEmbedding
 import Settings
 
 struct GeneralSettingsPane: View {
@@ -150,14 +149,14 @@ private struct SemanticSearchSettings: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       if !SemanticModelStore.isSupported {
-        caption("Semantic search requires a Mac with Apple silicon.")
+        caption("Semantic search requires macOS 15 or later on a Mac with Apple silicon.")
       } else {
         caption("Find items by meaning with EmbeddingGemma 2. The model runs on this Mac and sends nothing anywhere.")
         status
         if !store.isBusy { actions }
         Toggle("Group similar copies", isOn: $groupSimilarItems)
           .disabled(!store.textInstalled)
-        caption("Ask ranks results by meaning. The preview lists similar versions and related items.")
+        caption("Ask ranks results by meaning. The preview lists similar versions.")
       }
     }
   }
@@ -182,7 +181,7 @@ private struct SemanticSearchSettings: View {
   }
 
   @ViewBuilder private var actions: some View {
-    let text = EmbeddingModelFiles.text.bytes, media = EmbeddingModelFiles.media.bytes
+    let text = SemanticModelFiles.textBytes, media = SemanticModelFiles.imageBytes
     if !store.textInstalled {
       HStack {
         Button("Download (\(size(text)))") { store.install(images: false) }

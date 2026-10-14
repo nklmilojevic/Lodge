@@ -80,12 +80,8 @@ Download the latest release from the
 ### Build from source
 
 ```sh
-scripts/build-llama.sh
 xcodebuild -scheme Lodge -configuration Debug
 ```
-
-`scripts/build-llama.sh` builds llama.cpp for semantic search. It needs CMake
-(or `uv`) and runs again only when the pinned version changes.
 
 ### Ask search (experimental)
 
@@ -103,14 +99,16 @@ Model output can be incorrect. Check the results before you use an item.
 
 ### Semantic search (optional)
 
-In **Settings > General > Meaning**, download EmbeddingGemma 2 (310 MB, or 865 MB
-with image search). The model runs on this Mac and requires Apple silicon. Lodge
-checks each file's size and SHA-256 before it installs the model.
+In **Settings > General > Meaning**, download EmbeddingGemma 2 (585 MB, or 895 MB
+with image search). The model runs on this Mac with Core ML, in a separate helper
+process, and requires macOS 15 on Apple silicon. Lodge checks each file's size and
+SHA-256 before it installs the model. The first searches after the download can
+be slow while macOS prepares the model for the Neural Engine.
 
 - Ask ranks the filtered items by meaning as well as by matching words. Without
   Apple Intelligence, Ask searches your whole request by meaning.
 - With image search, Ask also finds images by description, such as “a bar chart”.
-- The preview lists similar versions and related items.
+- The preview lists similar versions of the selected item.
 - **Group similar copies** hides older near-duplicates under the newest copy.
 
 Without the model, or if Ask fails, Lodge shows exact search results and a status

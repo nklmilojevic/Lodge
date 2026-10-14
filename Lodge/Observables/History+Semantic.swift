@@ -20,19 +20,19 @@ extension History {
     return (indexed, total, unreadable)
   }
 
-  /// Near-duplicates and related items for the detail panel.
-  func neighbors(of item: HistoryItemDecorator) -> (versions: [HistoryItemDecorator], related: [HistoryItemDecorator]) {
+  /// Near-duplicates for the detail panel.
+  func versions(of item: HistoryItemDecorator) -> [HistoryItemDecorator] {
     let revision = semanticRevision
-    let ids: (versions: [UUID], related: [UUID])
-    if let cache = neighborCache, cache.id == item.id, cache.revision == revision {
-      ids = (cache.versions, cache.related)
+    let ids: [UUID]
+    if let cache = versionCache, cache.id == item.id, cache.revision == revision {
+      ids = cache.versions
     } else {
-      ids = SemanticRanking.neighbors(of: item.id, in: semanticIndex)
-      neighborCache = (item.id, revision, ids.versions, ids.related)
+      ids = SemanticRanking.versions(of: item.id, in: semanticIndex)
+      versionCache = (item.id, revision, ids)
     }
-    guard !ids.versions.isEmpty || !ids.related.isEmpty else { return ([], []) }
+    guard !ids.isEmpty else { return [] }
     let byID = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
-    return (ids.versions.compactMap { byID[$0] }, ids.related.compactMap { byID[$0] })
+    return ids.compactMap { byID[$0] }
   }
 
   /// Each item's z-score for `text`, or nil when meaning search is not available.

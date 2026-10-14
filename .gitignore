@@ -7,5 +7,3 @@ Lodge.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/*
 .DS_Store
 Lodge/.DS_Store
 build/
-Packages/LlamaEmbedding/Vendor/
-Packages/LlamaEmbedding/.build/

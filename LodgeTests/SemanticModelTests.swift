@@ -106,8 +106,6 @@ final class SemanticModelTests: XCTestCase {
 
     history.searchQuery = ""
     let friday = try XCTUnwrap(items[corpus[20]])
-    let neighbors = history.neighbors(of: friday)
-    print("versions \(neighbors.versions.map(\.title)) related \(neighbors.related.map(\.title))")
-    XCTAssertEqual(neighbors.versions.map(\.id), [items[corpus[7]]!.id])
+    XCTAssertEqual(history.versions(of: friday).map(\.id), [items[corpus[7]]!.id])
   }
 }
