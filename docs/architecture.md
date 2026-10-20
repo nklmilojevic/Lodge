@@ -131,8 +131,8 @@ xcodebuild -project Lodge.xcodeproj -scheme Lodge \
 ```
 
 Pull requests and main-branch changes run the unit tests. The release workflow
-runs them before it creates a release tag. Both workflows use the committed
-`Package.resolved` file.
+runs them again on each release tag before it builds. Both workflows use the
+committed `Package.resolved` file.
 
 ## Performance checks
 

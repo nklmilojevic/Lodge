@@ -23,16 +23,20 @@ notarization, GitHub Releases, and Sparkle appcast updates.
 
 ## GitHub Actions (recommended)
 
-Use the **Release** workflow on `main`. Enter the new version tag and leave
-**Build an existing tag** disabled. For example:
+Cut a release from `main` with vesnik (settings in `.vesnik.yaml`):
 
 ```sh
-gh workflow run release.yml --repo nklmilojevic/Lodge --ref main -f tag=v1.2.0
+vesnik release --yes
 ```
 
-The workflow installs verified Sparkle tools, runs tests, commits the version
-and build number, and creates the tag. It then builds, signs, notarizes, creates
-the GitHub Release, and updates Sparkle and the Homebrew tap.
+vesnik bumps `MARKETING_VERSION` in `Lodge.xcodeproj/project.pbxproj`, writes
+`CHANGELOG.md`, commits to `main`, tags the commit `vX.Y.Z`, pushes both, and
+creates the GitHub Release with its notes. Pushing the tag starts the Release
+workflow. It runs the unit tests, then sets `CURRENT_PROJECT_VERSION` to the
+commit count in its own checkout. The number is not committed, and it grows on
+`main`, so it stays above the last shipped build. Sparkle compares it. The
+workflow then builds, signs, notarizes, uploads the app and DMG to the release,
+and updates Sparkle and the Homebrew tap.
 
 The workflow downloads Sparkle 2.9.2 from its official release archive and checks
 the pinned SHA-256 checksum before extraction. Homebrew is not required for
@@ -40,18 +44,18 @@ these tools. The tooling version is separate from the app's framework version.
 
 ### Retry a release with an existing tag
 
-If a run failed after creating the tag, start a new run from the corrected
-workflow on `main` and enable **Build an existing tag**:
+If a run failed after the tag was pushed, run the workflow again on that tag:
 
 ```sh
-gh workflow run release.yml --repo nklmilojevic/Lodge --ref main \
-  -f tag=v1.2.0 -f existing_tag=true
+gh workflow run release.yml --repo nklmilojevic/Lodge --ref main -f tag=v1.2.0
 ```
 
 This uses the current workflow but checks out the existing tag. It verifies the
-tag and app version, runs tests, and builds that exact commit. It does not change
-the tag or increment the build number. Use this mode only to recover the release
-for that version. A new release requires a new tag.
+tag and app version, runs tests, and builds that exact commit with the same
+commit-count build number as the first run. It does not change the tag, and it
+updates the release's assets without replacing its notes. The workflow refuses a
+run with `existing_tag` set to false. A new version is a new release: run
+`vesnik release --yes`.
 
 The **Re-run jobs** button uses the workflow from the failed run, so it does not
 apply a later workflow fix.
@@ -75,7 +79,9 @@ base64 -i sparkle_private_key | pbcopy
 
 ## Manual release (local)
 
-1. Bump `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in Xcode.
+1. Bump `MARKETING_VERSION` in Xcode, and set `CURRENT_PROJECT_VERSION` above the
+   last shipped build (`sparkle:version` in `appcast.xml`). The GitHub workflow
+   sets it to the commit count instead.
 2. Update `scripts/export-options.plist` with your `teamID`.
 3. Build, sign, notarize, and package artifacts:
 
