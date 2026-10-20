@@ -1,0 +1,9 @@
+provider: claude
+model: claude-haiku-5-5
+style:
+  product: "a lightweight clipboard manager for macOS"
+packages:
+  - path: .
+    files:
+      - file: Lodge.xcodeproj/project.pbxproj
+        regex: 'MARKETING_VERSION = (?P<v>[^;]+);'

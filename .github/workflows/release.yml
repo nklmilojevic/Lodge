@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (e.g. v2.7.0)"
+        description: "Existing release tag to build (e.g. v2.7.0)"
         required: true
       existing_tag:
-        description: "Build an existing tag without changing its version"
+        description: "Build the existing tag (the only mode; cut releases with vesnik release --yes)"
         type: boolean
-        default: false
+        default: true
   push:
     tags:
       - "v*"
@@ -25,9 +25,15 @@ jobs:
       DOWNLOAD_URL_PREFIX: https://github.com/${{ github.repository }}/releases/download/${{ github.event.inputs.tag || github.ref_name }}/
     steps:
       - name: Validate release tag
+        env:
+          EXISTING_TAG: ${{ inputs.existing_tag }}
         run: |
           if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
             echo "Invalid release tag: $RELEASE_TAG"
+            exit 1
+          fi
+          if [[ "${{ github.event_name }}" == workflow_dispatch && "$EXISTING_TAG" != true ]]; then
+            echo "::error::Only existing tags are built here. Cut a release with vesnik release --yes."
             exit 1
           fi
 
@@ -35,7 +41,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_dispatch' && (inputs.existing_tag && format('refs/tags/{0}', inputs.tag) || 'main') || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
 
       - name: Install Sparkle tools
         env:
@@ -61,30 +67,6 @@ jobs:
           -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile
           CODE_SIGNING_ALLOWED=NO test
 
-      - name: Commit and tag release version
-        if: github.event_name == 'workflow_dispatch' && !inputs.existing_tag
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git fetch origin main --tags
-          if git rev-parse --verify --quiet "refs/tags/$RELEASE_TAG"; then
-            echo "Tag already exists: $RELEASE_TAG"
-            exit 1
-          fi
-
-          VERSION="${RELEASE_TAG#v}"
-          CURRENT_BUILD=$(grep -m1 'CURRENT_PROJECT_VERSION' Lodge.xcodeproj/project.pbxproj | sed 's/[^0-9]//g')
-          NEW_BUILD=$((CURRENT_BUILD + 1))
-          sed -i '' "s/MARKETING_VERSION = .*;/MARKETING_VERSION = $VERSION;/g" Lodge.xcodeproj/project.pbxproj
-          sed -i '' "s/CURRENT_PROJECT_VERSION = .*;/CURRENT_PROJECT_VERSION = $NEW_BUILD;/g" Lodge.xcodeproj/project.pbxproj
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Lodge.xcodeproj/project.pbxproj
-          git commit -m "Release $RELEASE_TAG"
-          git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
-          git push --atomic origin HEAD:main "refs/tags/$RELEASE_TAG"
-
       - name: Verify committed release version
         run: |
           VERSION="${RELEASE_TAG#v}"
@@ -102,6 +84,15 @@ jobs:
           fi
 
           git diff --exit-code
+
+      # Sparkle compares CFBundleVersion, so each build gets the commit count (it grows on main and
+      # is above the last shipped build). Only this checkout changes: the file is not committed.
+      - name: Set the build number
+        run: |
+          BUILD="$(git rev-list --count HEAD)"
+          sed -i '' "s/CURRENT_PROJECT_VERSION = [^;]*;/CURRENT_PROJECT_VERSION = $BUILD;/g" Lodge.xcodeproj/project.pbxproj
+          grep -q "CURRENT_PROJECT_VERSION = $BUILD;" Lodge.xcodeproj/project.pbxproj
+          echo "Build number $BUILD"
 
       - name: Import signing certificates
         uses: apple-actions/import-codesign-certs@8f3fb608891dd2244cdab3d69cd68c0d37a7fe93 # v2
@@ -140,6 +131,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cp appcast.xml "$RUNNER_TEMP/appcast.xml"
+          # The build number set for this build stays out of main.
+          git checkout -- Lodge.xcodeproj/project.pbxproj
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin main
