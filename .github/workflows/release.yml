@@ -95,7 +95,7 @@ jobs:
           echo "Build number $BUILD"
 
       - name: Import signing certificates
-        uses: apple-actions/import-codesign-certs@8f3fb608891dd2244cdab3d69cd68c0d37a7fe93 # v2
+        uses: apple-actions/import-codesign-certs@77ba2a2a8f5cfc8c405ebf3159f767c323e238f9 # v7
         with:
           p12-file-base64: ${{ secrets.MACOS_CERTIFICATE_P12 }}
           p12-password: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
